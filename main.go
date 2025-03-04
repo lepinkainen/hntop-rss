@@ -4,7 +4,6 @@ import (
 	"database/sql"
 	"flag"
 	"fmt"
-	"log"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -12,6 +11,7 @@ import (
 
 	"github.com/PuerkitoBio/goquery"
 	"github.com/gorilla/feeds"
+	log "github.com/sirupsen/logrus"
 	_ "modernc.org/sqlite" // Pure Go SQLite driver
 )
 
@@ -74,9 +74,15 @@ func fetchHackerNewsItems() []HackerNewsItem {
 	now := time.Now()
 
 	doc.Find(".athing").Each(func(i int, s *goquery.Selection) {
-		title := s.Find(".titleline a").Text()
+		title := s.Find(".titleline > a:first-child").Text()
 		link, _ := s.Find(".titleline a").Attr("href")
 		points := s.Next().Find(".score").Text()
+
+		log.WithFields(log.Fields{
+			"title":  title,
+			"link":   link,
+			"points": points,
+		}).Debug("Found item")
 
 		items = append(items, HackerNewsItem{
 			Title:     title,
@@ -99,13 +105,13 @@ func updateStoredItems(db *sql.DB, newItems []HackerNewsItem) {
 				points = excluded.points`,
 			item.Title, item.Link, item.Points, item.CreatedAt)
 		if err != nil {
-			log.Printf("Error updating item %s: %v", item.Link, err)
+			log.WithError(err).WithField("link", item.Link).Error("Error updating item")
 			continue
 		}
 
 		rowsAffected, _ := result.RowsAffected()
 		if rowsAffected > 0 {
-			fmt.Printf("Added/Updated item: %s\n", item.Title)
+			log.WithField("title", item.Title).Info("Added/Updated item")
 		}
 	}
 }
@@ -122,7 +128,7 @@ func getAllItems(db *sql.DB) []HackerNewsItem {
 		var item HackerNewsItem
 		err := rows.Scan(&item.Title, &item.Link, &item.Points, &item.CreatedAt)
 		if err != nil {
-			log.Printf("Error scanning row: %v", err)
+			log.WithError(err).Error("Error scanning row")
 			continue
 		}
 		items = append(items, item)
@@ -184,10 +190,19 @@ func updateAndSaveFeed(outDir string) {
 	if err != nil {
 		log.Fatalf("Error writing RSS feed to file: %v", err)
 	}
-	fmt.Printf("RSS feed with %d items saved to %s\n", len(allItems), filename)
+	log.WithFields(log.Fields{
+		"count":    len(allItems),
+		"filename": filename,
+	}).Info("RSS feed saved")
 }
 
 func main() {
+	// Configure log
+	log.SetFormatter(&log.TextFormatter{
+		FullTimestamp: true,
+	})
+	log.SetLevel(log.WarnLevel) // Only show warnings and above by default
+
 	// Define and parse the outdir flag
 	outDir := flag.String("outdir", ".", "directory where the RSS feed file will be saved")
 	flag.Parse()
