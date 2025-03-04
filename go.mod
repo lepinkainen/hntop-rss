@@ -1,4 +1,4 @@
-module hntop
+module github.com/lepinkainen/hntop-rss
 
 go 1.24.0
 
