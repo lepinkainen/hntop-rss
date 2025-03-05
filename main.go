@@ -16,10 +16,12 @@ import (
 )
 
 type HackerNewsItem struct {
-	Title     string
-	Link      string
-	Points    string
-	CreatedAt time.Time
+	Title        string
+	Link         string
+	CommentsLink string
+	Points       string
+	CommentCount string
+	CreatedAt    time.Time
 }
 
 func initDB() *sql.DB {
@@ -43,7 +45,9 @@ func initDB() *sql.DB {
 			id INTEGER PRIMARY KEY AUTOINCREMENT,
 			title TEXT NOT NULL,
 			link TEXT NOT NULL UNIQUE,
+			comments_link TEXT,
 			points TEXT,
+			comment_count TEXT,
 			created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 		)`
 	_, err = db.Exec(createTable)
@@ -75,20 +79,31 @@ func fetchHackerNewsItems() []HackerNewsItem {
 
 	doc.Find(".athing").Each(func(i int, s *goquery.Selection) {
 		title := s.Find(".titleline > a:first-child").Text()
-		link, _ := s.Find(".titleline a").Attr("href")
-		points := s.Next().Find(".score").Text()
+		link, _ := s.Find(".titleline > a:first-child").Attr("href")
+
+		// Get the comments link from the subtext row
+		itemId := s.AttrOr("id", "")
+		commentsLink := fmt.Sprintf("https://news.ycombinator.com/item?id=%s", itemId)
+
+		subtext := s.Next()
+		points := subtext.Find(".score").Text()
+		commentCount := subtext.Find("a").Last().Text()
 
 		log.WithFields(log.Fields{
-			"title":  title,
-			"link":   link,
-			"points": points,
+			"title":        title,
+			"link":         link,
+			"commentsLink": commentsLink,
+			"points":       points,
+			"comments":     commentCount,
 		}).Debug("Found item")
 
 		items = append(items, HackerNewsItem{
-			Title:     title,
-			Link:      link,
-			Points:    points,
-			CreatedAt: now,
+			Title:        title,
+			Link:         link,
+			CommentsLink: commentsLink,
+			Points:       points,
+			CommentCount: commentCount,
+			CreatedAt:    now,
 		})
 	})
 
@@ -98,12 +113,14 @@ func fetchHackerNewsItems() []HackerNewsItem {
 func updateStoredItems(db *sql.DB, newItems []HackerNewsItem) {
 	for _, item := range newItems {
 		result, err := db.Exec(`
-			INSERT INTO items (title, link, points, created_at)
-			VALUES (?, ?, ?, ?)
+			INSERT INTO items (title, link, comments_link, points, comment_count, created_at)
+			VALUES (?, ?, ?, ?, ?, ?)
 			ON CONFLICT(link) DO UPDATE SET
 				title = excluded.title,
-				points = excluded.points`,
-			item.Title, item.Link, item.Points, item.CreatedAt)
+				comments_link = excluded.comments_link,
+				points = excluded.points,
+				comment_count = excluded.comment_count`,
+			item.Title, item.Link, item.CommentsLink, item.Points, item.CommentCount, item.CreatedAt)
 		if err != nil {
 			log.WithError(err).WithField("link", item.Link).Error("Error updating item")
 			continue
@@ -117,7 +134,7 @@ func updateStoredItems(db *sql.DB, newItems []HackerNewsItem) {
 }
 
 func getAllItems(db *sql.DB) []HackerNewsItem {
-	rows, err := db.Query("SELECT title, link, points, created_at FROM items ORDER BY created_at DESC LIMIT 30")
+	rows, err := db.Query("SELECT title, link, comments_link, points, comment_count, created_at FROM items ORDER BY created_at DESC LIMIT 30")
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -126,7 +143,7 @@ func getAllItems(db *sql.DB) []HackerNewsItem {
 	var items []HackerNewsItem
 	for rows.Next() {
 		var item HackerNewsItem
-		err := rows.Scan(&item.Title, &item.Link, &item.Points, &item.CreatedAt)
+		err := rows.Scan(&item.Title, &item.Link, &item.CommentsLink, &item.Points, &item.CommentCount, &item.CreatedAt)
 		if err != nil {
 			log.WithError(err).Error("Error scanning row")
 			continue
@@ -149,10 +166,14 @@ func generateRSSFeed(items []HackerNewsItem) string {
 
 	for _, item := range items {
 		feed.Items = append(feed.Items, &feeds.Item{
-			Title:       item.Title,
-			Link:        &feeds.Link{Href: item.Link},
-			Description: fmt.Sprintf("Points: %s", item.Points),
-			Created:     item.CreatedAt,
+			Title: item.Title,
+			Link:  &feeds.Link{Href: item.CommentsLink},
+			Description: fmt.Sprintf("Points: %s | Comments: %s | Article Link: <a href=\"%s\">%s</a>",
+				item.Points,
+				item.CommentCount,
+				item.Link,
+				item.Link),
+			Created: item.CreatedAt,
 		})
 	}
 
