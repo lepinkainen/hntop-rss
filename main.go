@@ -205,7 +205,7 @@ func generateRSSFeed(items []HackerNewsItem) string {
 			Author: &feeds.Author{
 				Name: item.Author,
 			},
-			Description: fmt.Sprintf("Points: %s | Comments: %s | Article Link: <a href=\"%s\">%s</a>",
+			Description: fmt.Sprintf("%s | %s | Article Link: <a href=\"%s\">%s</a>",
 				item.Points,
 				item.CommentCount,
 				item.Link,
