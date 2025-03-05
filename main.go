@@ -8,6 +8,8 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"strconv"
+	"strings"
 	"time"
 
 	"github.com/PuerkitoBio/goquery"
@@ -22,7 +24,9 @@ type HackerNewsItem struct {
 	CommentsLink string
 	Points       string
 	CommentCount string
+	Author       string
 	CreatedAt    time.Time
+	UpdatedAt    time.Time
 }
 
 func initDB() *sql.DB {
@@ -49,7 +53,9 @@ func initDB() *sql.DB {
 			comments_link TEXT,
 			points TEXT,
 			comment_count TEXT,
-			created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+			author TEXT,
+			created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+			updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 		)`
 	_, err = db.Exec(createTable)
 	if err != nil {
@@ -89,6 +95,18 @@ func fetchHackerNewsItems() []HackerNewsItem {
 		subtext := s.Next()
 		points := subtext.Find(".score").Text()
 		commentCount := subtext.Find("a").Last().Text()
+		author := subtext.Find(".hnuser").Text()
+
+		// Parse the timestamp from the age span's title attribute
+		updatedAt := now
+		if ageSpan := subtext.Find(".age"); ageSpan.Length() > 0 {
+			if timestamp, exists := ageSpan.Attr("title"); exists {
+				// Parse the Unix timestamp from the title attribute
+				if unixTime, err := strconv.ParseInt(strings.Split(timestamp, " ")[1], 10, 64); err == nil {
+					updatedAt = time.Unix(unixTime, 0)
+				}
+			}
+		}
 
 		log.WithFields(log.Fields{
 			"title":        title,
@@ -96,6 +114,8 @@ func fetchHackerNewsItems() []HackerNewsItem {
 			"commentsLink": commentsLink,
 			"points":       points,
 			"comments":     commentCount,
+			"author":       author,
+			"updatedAt":    updatedAt,
 		}).Debug("Found item")
 
 		items = append(items, HackerNewsItem{
@@ -104,7 +124,9 @@ func fetchHackerNewsItems() []HackerNewsItem {
 			CommentsLink: commentsLink,
 			Points:       points,
 			CommentCount: commentCount,
+			Author:       author,
 			CreatedAt:    now,
+			UpdatedAt:    updatedAt,
 		})
 	})
 
@@ -114,14 +136,16 @@ func fetchHackerNewsItems() []HackerNewsItem {
 func updateStoredItems(db *sql.DB, newItems []HackerNewsItem) {
 	for _, item := range newItems {
 		result, err := db.Exec(`
-			INSERT INTO items (title, link, comments_link, points, comment_count, created_at)
-			VALUES (?, ?, ?, ?, ?, ?)
+			INSERT INTO items (title, link, comments_link, points, comment_count, author, created_at, updated_at)
+			VALUES (?, ?, ?, ?, ?, ?, ?, ?)
 			ON CONFLICT(link) DO UPDATE SET
 				title = excluded.title,
 				comments_link = excluded.comments_link,
 				points = excluded.points,
-				comment_count = excluded.comment_count`,
-			item.Title, item.Link, item.CommentsLink, item.Points, item.CommentCount, item.CreatedAt)
+				comment_count = excluded.comment_count,
+				author = excluded.author,
+				updated_at = excluded.updated_at`,
+			item.Title, item.Link, item.CommentsLink, item.Points, item.CommentCount, item.Author, item.CreatedAt, item.UpdatedAt)
 		if err != nil {
 			log.WithError(err).WithField("link", item.Link).Error("Error updating item")
 			continue
@@ -135,7 +159,7 @@ func updateStoredItems(db *sql.DB, newItems []HackerNewsItem) {
 }
 
 func getAllItems(db *sql.DB) []HackerNewsItem {
-	rows, err := db.Query("SELECT title, link, comments_link, points, comment_count, created_at FROM items ORDER BY created_at DESC LIMIT 30")
+	rows, err := db.Query("SELECT title, link, comments_link, points, comment_count, author, created_at, updated_at FROM items ORDER BY created_at DESC LIMIT 30")
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -144,7 +168,7 @@ func getAllItems(db *sql.DB) []HackerNewsItem {
 	var items []HackerNewsItem
 	for rows.Next() {
 		var item HackerNewsItem
-		err := rows.Scan(&item.Title, &item.Link, &item.CommentsLink, &item.Points, &item.CommentCount, &item.CreatedAt)
+		err := rows.Scan(&item.Title, &item.Link, &item.CommentsLink, &item.Points, &item.CommentCount, &item.Author, &item.CreatedAt, &item.UpdatedAt)
 		if err != nil {
 			log.WithError(err).Error("Error scanning row")
 			continue
@@ -160,7 +184,7 @@ func generateRSSFeed(items []HackerNewsItem) string {
 	feed := &feeds.Feed{
 		Title:       "Hacker News RSS Feed",
 		Description: "Latest stories from Hacker News",
-		Link:        &feeds.Link{Href: "https://news.ycombinator.com"},
+		Link:        &feeds.Link{Href: "https://news.ycombinator.com/", Rel: "self", Type: "text/html"},
 		Created:     now,
 		Updated:     now,
 	}
@@ -177,13 +201,17 @@ func generateRSSFeed(items []HackerNewsItem) string {
 		feed.Items = append(feed.Items, &feeds.Item{
 			Title: item.Title,
 			Link:  &feeds.Link{Href: item.CommentsLink},
-			Id:    fmt.Sprintf("tag:news.ycombinator.com,2025:%s", itemID),
+			Id:    fmt.Sprintf("tag:news.ycombinator.com:%s", itemID),
+			Author: &feeds.Author{
+				Name: item.Author,
+			},
 			Description: fmt.Sprintf("Points: %s | Comments: %s | Article Link: <a href=\"%s\">%s</a>",
 				item.Points,
 				item.CommentCount,
 				item.Link,
 				item.Link),
 			Created: item.CreatedAt,
+			Updated: item.UpdatedAt,
 		})
 	}
 
