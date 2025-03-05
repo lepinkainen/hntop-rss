@@ -184,12 +184,14 @@ func generateRSSFeed(items []HackerNewsItem) string {
 	feed := &feeds.Feed{
 		Title:       "Hacker News RSS Feed",
 		Description: "Latest stories from Hacker News",
-		Link:        &feeds.Link{Href: "https://news.ycombinator.com/", Rel: "self", Type: "text/html"},
+		Link:        &feeds.Link{Href: "https://news.ycombinator.com/", Rel: "alternate", Type: "text/html"},
+		Id:          "tag:news.ycombinator.com,2024:feed",
 		Created:     now,
 		Updated:     now,
 	}
 
 	idRegex := regexp.MustCompile(`id=(\d+)`)
+	domainRegex := regexp.MustCompile(`^https?://([^/]+)`)
 
 	for _, item := range items {
 		// Extract item ID from the comments link
@@ -198,17 +200,38 @@ func generateRSSFeed(items []HackerNewsItem) string {
 			itemID = matches[1]
 		}
 
+		// Extract domain from the article link
+		domain := ""
+		if matches := domainRegex.FindStringSubmatch(item.Link); len(matches) > 1 {
+			domain = matches[1]
+		}
+
+		// Format points (remove "points" suffix if present)
+		points := strings.TrimSuffix(item.Points, " points")
+		points = strings.TrimSuffix(points, " point")
+
+		// Format comment count (remove "comments" suffix if present)
+		comments := strings.TrimSuffix(item.CommentCount, " comments")
+		comments = strings.TrimSuffix(comments, " comment")
+
 		feed.Items = append(feed.Items, &feeds.Item{
 			Title: item.Title,
-			Link:  &feeds.Link{Href: item.CommentsLink},
-			Id:    fmt.Sprintf("tag:news.ycombinator.com:%s", itemID),
+			Link:  &feeds.Link{Href: item.CommentsLink, Rel: "alternate", Type: "text/html"},
+			Id:    fmt.Sprintf("tag:news.ycombinator.com,%d:%s", item.UpdatedAt.Year(), itemID),
 			Author: &feeds.Author{
 				Name: item.Author,
 			},
-			Description: fmt.Sprintf("%s | %s | Article Link: <a href=\"%s\">%s</a>",
-				item.Points,
-				item.CommentCount,
-				item.Link,
+			Description: fmt.Sprintf(`<p>
+				<strong>%s points</strong> | 
+				<strong>%s comments</strong><br/>
+				Source: %s<br/>
+				<a href="%s">View Comments</a> | 
+				<a href="%s">Read Article</a>
+				</p>`,
+				points,
+				comments,
+				domain,
+				item.CommentsLink,
 				item.Link),
 			Created: item.CreatedAt,
 			Updated: item.UpdatedAt,
