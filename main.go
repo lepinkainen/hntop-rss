@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"regexp"
 	"time"
 
 	"github.com/PuerkitoBio/goquery"
@@ -164,10 +165,19 @@ func generateRSSFeed(items []HackerNewsItem) string {
 		Updated:     now,
 	}
 
+	idRegex := regexp.MustCompile(`id=(\d+)`)
+
 	for _, item := range items {
+		// Extract item ID from the comments link
+		itemID := ""
+		if matches := idRegex.FindStringSubmatch(item.CommentsLink); len(matches) > 1 {
+			itemID = matches[1]
+		}
+
 		feed.Items = append(feed.Items, &feeds.Item{
 			Title: item.Title,
 			Link:  &feeds.Link{Href: item.CommentsLink},
+			Id:    fmt.Sprintf("tag:news.ycombinator.com,2025:%s", itemID),
 			Description: fmt.Sprintf("Points: %s | Comments: %s | Article Link: <a href=\"%s\">%s</a>",
 				item.Points,
 				item.CommentCount,
