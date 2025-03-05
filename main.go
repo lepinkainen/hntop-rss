@@ -125,7 +125,7 @@ func fetchHackerNewsItems() []HackerNewsItem {
 			Points:       points,
 			CommentCount: commentCount,
 			Author:       author,
-			CreatedAt:    now,
+			CreatedAt:    updatedAt,
 			UpdatedAt:    updatedAt,
 		})
 	})
@@ -184,21 +184,21 @@ func generateRSSFeed(items []HackerNewsItem) string {
 	feed := &feeds.Feed{
 		Title:       "Hacker News RSS Feed",
 		Description: "Latest stories from Hacker News",
-		Link:        &feeds.Link{Href: "https://news.ycombinator.com/", Rel: "alternate", Type: "text/html"},
+		Link:        &feeds.Link{Href: "https://news.ycombinator.com/", Rel: "self", Type: "text/html"},
 		Id:          "tag:news.ycombinator.com,2024:feed",
 		Created:     now,
 		Updated:     now,
 	}
 
-	idRegex := regexp.MustCompile(`id=(\d+)`)
+	// idRegex := regexp.MustCompile(`id=(\d+)`)
 	domainRegex := regexp.MustCompile(`^https?://([^/]+)`)
 
 	for _, item := range items {
 		// Extract item ID from the comments link
-		itemID := ""
-		if matches := idRegex.FindStringSubmatch(item.CommentsLink); len(matches) > 1 {
-			itemID = matches[1]
-		}
+		// itemID := ""
+		// if matches := idRegex.FindStringSubmatch(item.CommentsLink); len(matches) > 1 {
+		// 	itemID = matches[1]
+		// }
 
 		// Extract domain from the article link
 		domain := ""
@@ -217,7 +217,7 @@ func generateRSSFeed(items []HackerNewsItem) string {
 		feed.Items = append(feed.Items, &feeds.Item{
 			Title: item.Title,
 			Link:  &feeds.Link{Href: item.CommentsLink, Rel: "alternate", Type: "text/html"},
-			Id:    fmt.Sprintf("tag:news.ycombinator.com,%d:%s", item.UpdatedAt.Year(), itemID),
+			Id:    item.CommentsLink,
 			Author: &feeds.Author{
 				Name: item.Author,
 			},
@@ -233,8 +233,7 @@ func generateRSSFeed(items []HackerNewsItem) string {
 				domain,
 				item.CommentsLink,
 				item.Link),
-			Created: item.CreatedAt,
-			Updated: item.UpdatedAt,
+			Updated: item.CreatedAt,
 		})
 	}
 
