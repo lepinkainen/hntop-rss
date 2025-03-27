@@ -192,6 +192,7 @@ func generateRSSFeed(items []HackerNewsItem) string {
 
 	// idRegex := regexp.MustCompile(`id=(\d+)`)
 	domainRegex := regexp.MustCompile(`^https?://([^/]+)`)
+	commentRegex := regexp.MustCompile(`(\d+)`)
 
 	for _, item := range items {
 		// Extract item ID from the comments link
@@ -210,9 +211,11 @@ func generateRSSFeed(items []HackerNewsItem) string {
 		points := strings.TrimSuffix(item.Points, " points")
 		points = strings.TrimSuffix(points, " point")
 
-		// Format comment count (remove "comments" suffix if present)
-		comments := strings.TrimSuffix(item.CommentCount, " comments")
-		comments = strings.TrimSuffix(comments, " comment")
+		// Format comment count - just extract the digits portion
+		comments := item.CommentCount
+		if matches := commentRegex.FindStringSubmatch(item.CommentCount); len(matches) > 1 {
+			comments = matches[1]
+		}
 
 		feed.Items = append(feed.Items, &feeds.Item{
 			Title: item.Title,
