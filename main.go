@@ -19,6 +19,7 @@ import (
 )
 
 type HackerNewsItem struct {
+	ItemID       string
 	Title        string
 	Link         string
 	CommentsLink string
@@ -46,17 +47,18 @@ func initDB() *sql.DB {
 
 	// Create table if it doesn't exist
 	createTable := `
-		CREATE TABLE IF NOT EXISTS items (
-			id INTEGER PRIMARY KEY AUTOINCREMENT,
-			title TEXT NOT NULL,
-			link TEXT NOT NULL UNIQUE,
-			comments_link TEXT,
-			points TEXT,
-			comment_count TEXT,
-			author TEXT,
-			created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-			updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-		)`
+	CREATE TABLE IF NOT EXISTS items (
+		id INTEGER PRIMARY KEY AUTOINCREMENT,      -- Internal row ID (optional, but common)
+		item_hn_id TEXT NOT NULL UNIQUE,        -- Hacker News Item ID, for deduplication
+		title TEXT NOT NULL,
+		link TEXT NOT NULL,                     -- The actual article URL
+		comments_link TEXT,
+		points TEXT,
+		comment_count TEXT,
+		author TEXT,
+		created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+		updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+	)`
 	_, err = db.Exec(createTable)
 	if err != nil {
 		log.Fatal(err)
@@ -87,6 +89,7 @@ func fetchHackerNewsItems() []HackerNewsItem {
 	doc.Find(".athing").Each(func(i int, s *goquery.Selection) {
 		title := s.Find(".titleline > a:first-child").Text()
 		link, _ := s.Find(".titleline > a:first-child").Attr("href")
+		itemIdStr := s.AttrOr("id", "") // Hacker News item ID
 
 		// Get the comments link from the subtext row
 		itemId := s.AttrOr("id", "")
@@ -119,6 +122,7 @@ func fetchHackerNewsItems() []HackerNewsItem {
 		}).Debug("Found item")
 
 		items = append(items, HackerNewsItem{
+			ItemID:       itemIdStr, // Populate the new field
 			Title:        title,
 			Link:         link,
 			CommentsLink: commentsLink,
@@ -135,31 +139,35 @@ func fetchHackerNewsItems() []HackerNewsItem {
 
 func updateStoredItems(db *sql.DB, newItems []HackerNewsItem) {
 	for _, item := range newItems {
+		// The 'item.CreatedAt' should be the original submission time of the HN post.
+		// The 'item.UpdatedAt' should be when it was last seen/modified by your scraper.
 		result, err := db.Exec(`
-			INSERT INTO items (title, link, comments_link, points, comment_count, author, created_at, updated_at)
-			VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-			ON CONFLICT(link) DO UPDATE SET
+			INSERT INTO items (item_hn_id, title, link, comments_link, points, comment_count, author, created_at, updated_at)
+			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+			ON CONFLICT(item_hn_id) DO UPDATE SET
 				title = excluded.title,
+				link = excluded.link, 
 				comments_link = excluded.comments_link,
 				points = excluded.points,
 				comment_count = excluded.comment_count,
 				author = excluded.author,
-				updated_at = excluded.updated_at`,
-			item.Title, item.Link, item.CommentsLink, item.Points, item.CommentCount, item.Author, item.CreatedAt, item.UpdatedAt)
+				updated_at = excluded.updated_at`, // Note: created_at is not updated on conflict
+			item.ItemID, item.Title, item.Link, item.CommentsLink, item.Points, item.CommentCount, item.Author, item.CreatedAt, item.UpdatedAt)
+
 		if err != nil {
-			log.WithError(err).WithField("link", item.Link).Error("Error updating item")
+			log.WithError(err).WithField("hn_id", item.ItemID).Error("Error updating item")
 			continue
 		}
 
 		rowsAffected, _ := result.RowsAffected()
 		if rowsAffected > 0 {
-			log.WithField("title", item.Title).Info("Added/Updated item")
+			log.WithField("title", item.Title).WithField("hn_id", item.ItemID).Info("Processed item (added/updated in DB)")
 		}
 	}
 }
 
 func getAllItems(db *sql.DB) []HackerNewsItem {
-	rows, err := db.Query("SELECT title, link, comments_link, points, comment_count, author, created_at, updated_at FROM items ORDER BY created_at DESC LIMIT 30")
+	rows, err := db.Query("SELECT title, link, comments_link, points, comment_count, author, created_at, updated_at FROM items WHERE points > 50 ORDER BY created_at DESC LIMIT 30")
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -236,7 +244,7 @@ func generateRSSFeed(items []HackerNewsItem) string {
 				domain,
 				item.CommentsLink,
 				item.Link),
-			Updated: item.CreatedAt,
+			Created: item.CreatedAt,
 		})
 	}
 
