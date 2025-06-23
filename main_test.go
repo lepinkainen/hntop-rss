@@ -390,7 +390,7 @@ func TestGetAllItems_FilterByPoints(t *testing.T) {
 	updateStoredItems(db, items)
 
 	// Get items (should only return those with >50 points)
-	retrievedItems := getAllItems(db)
+	retrievedItems := getAllItems(db, 30)
 
 	if len(retrievedItems) != 2 {
 		t.Errorf("Expected 2 items with >50 points, got %d", len(retrievedItems))
@@ -444,7 +444,7 @@ func TestGetAllItems_OrderByCreatedAt(t *testing.T) {
 	}
 
 	updateStoredItems(db, items)
-	retrievedItems := getAllItems(db)
+	retrievedItems := getAllItems(db, 30)
 
 	if len(retrievedItems) != 2 {
 		t.Fatalf("Expected 2 items, got %d", len(retrievedItems))

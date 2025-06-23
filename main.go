@@ -175,8 +175,8 @@ func updateStoredItems(db *sql.DB, newItems []HackerNewsItem) {
 	}
 }
 
-func getAllItems(db *sql.DB) []HackerNewsItem {
-	rows, err := db.Query("SELECT title, link, comments_link, points, comment_count, author, created_at, updated_at FROM items WHERE points > 50 ORDER BY created_at DESC LIMIT 30")
+func getAllItems(db *sql.DB, limit int) []HackerNewsItem {
+	rows, err := db.Query("SELECT title, link, comments_link, points, comment_count, author, created_at, updated_at FROM items WHERE points > 50 ORDER BY created_at DESC LIMIT ?", limit)
 	if err != nil {
 		slog.Error("Failed to query database", "error", err)
 		os.Exit(1)
@@ -197,6 +197,51 @@ func getAllItems(db *sql.DB) []HackerNewsItem {
 	return items
 }
 
+func updateItemStats(db *sql.DB, items []HackerNewsItem) {
+	for _, item := range items {
+		// Fetch current stats from Algolia API
+		url := fmt.Sprintf("https://hn.algolia.com/api/v1/items/%s", item.ItemID)
+		res, err := http.Get(url)
+		if err != nil {
+			slog.Warn("Failed to fetch item stats from Algolia", "error", err, "hn_id", item.ItemID)
+			continue
+		}
+
+		if res.StatusCode != 200 {
+			slog.Warn("HTTP error fetching item stats", "code", res.StatusCode, "hn_id", item.ItemID)
+			_ = res.Body.Close()
+			continue
+		}
+
+		var algoliaItem AlgoliaHit
+		if err := json.NewDecoder(res.Body).Decode(&algoliaItem); err != nil {
+			slog.Warn("Failed to decode Algolia response", "error", err, "hn_id", item.ItemID)
+			_ = res.Body.Close()
+			continue
+		}
+		_ = res.Body.Close()
+
+		// Update database with current stats
+		points := strconv.Itoa(algoliaItem.Points)
+		commentCount := strconv.Itoa(algoliaItem.NumComments)
+		
+		_, err = db.Exec(`
+			UPDATE items SET 
+				points = ?, 
+				comment_count = ?, 
+				updated_at = ?
+			WHERE item_hn_id = ?`,
+			points, commentCount, time.Now(), item.ItemID)
+		
+		if err != nil {
+			slog.Warn("Failed to update item stats in database", "error", err, "hn_id", item.ItemID)
+			continue
+		}
+
+		slog.Debug("Updated item stats", "hn_id", item.ItemID, "points", points, "comments", commentCount)
+	}
+}
+
 func generateRSSFeed(items []HackerNewsItem) string {
 	now := time.Now()
 	feed := &feeds.Feed{
@@ -213,12 +258,6 @@ func generateRSSFeed(items []HackerNewsItem) string {
 	commentRegex := regexp.MustCompile(`(\d+)`)
 
 	for _, item := range items {
-		// Extract item ID from the comments link
-		// itemID := ""
-		// if matches := idRegex.FindStringSubmatch(item.CommentsLink); len(matches) > 1 {
-		// 	itemID = matches[1]
-		// }
-
 		// Extract domain from the article link
 		domain := ""
 		if matches := domainRegex.FindStringSubmatch(item.Link); len(matches) > 1 {
@@ -278,7 +317,13 @@ func updateAndSaveFeed(outDir string) {
 	updateStoredItems(db, newItems)
 
 	// Get all items from database
-	allItems := getAllItems(db)
+	allItems := getAllItems(db, 30)
+
+	// Update item stats with current data from Algolia
+	updateItemStats(db, allItems)
+
+	// Re-fetch items to get updated stats for RSS generation
+	allItems = getAllItems(db, 30)
 
 	// Ensure output directory exists
 	err := os.MkdirAll(outDir, 0755)
