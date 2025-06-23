@@ -53,6 +53,7 @@ func initDB() *sql.DB {
 	}
 	exeDir := filepath.Dir(exePath)
 	dbPath := filepath.Join(exeDir, "hackernews.db")
+	slog.Debug("Initializing database", "path", dbPath)
 
 	// Open database in the executable's directory
 	db, err := sql.Open("sqlite", dbPath) // Use "sqlite" driver name
@@ -80,11 +81,13 @@ func initDB() *sql.DB {
 		slog.Error("Failed to create table", "error", err)
 		os.Exit(1)
 	}
+	slog.Debug("Database initialized successfully")
 
 	return db
 }
 
 func fetchHackerNewsItems() []HackerNewsItem {
+	slog.Debug("Fetching Hacker News items from Algolia API")
 	res, err := http.Get("https://hn.algolia.com/api/v1/search_by_date?tags=front_page&hitsPerPage=100")
 	if err != nil {
 		slog.Error("Failed to fetch Hacker News items", "error", err)
@@ -105,6 +108,7 @@ func fetchHackerNewsItems() []HackerNewsItem {
 
 	var items []HackerNewsItem
 	now := time.Now()
+	slog.Debug("Processing Algolia response", "hitCount", len(algoliaResp.Hits))
 
 	for _, hit := range algoliaResp.Hits {
 		// Parse the ISO 8601 timestamp
@@ -143,10 +147,12 @@ func fetchHackerNewsItems() []HackerNewsItem {
 		})
 	}
 
+	slog.Debug("Finished processing items", "totalItems", len(items))
 	return items
 }
 
 func updateStoredItems(db *sql.DB, newItems []HackerNewsItem) {
+	slog.Debug("Updating stored items", "itemCount", len(newItems))
 	for _, item := range newItems {
 		// The 'item.CreatedAt' should be the original submission time of the HN post.
 		// The 'item.UpdatedAt' should be when it was last seen/modified by your scraper.
@@ -176,7 +182,8 @@ func updateStoredItems(db *sql.DB, newItems []HackerNewsItem) {
 }
 
 func getAllItems(db *sql.DB, limit int) []HackerNewsItem {
-	rows, err := db.Query("SELECT title, link, comments_link, points, comment_count, author, created_at, updated_at FROM items WHERE points > 50 ORDER BY created_at DESC LIMIT ?", limit)
+	slog.Debug("Querying database for items", "limit", limit)
+	rows, err := db.Query("SELECT item_hn_id, title, link, comments_link, points, comment_count, author, created_at, updated_at FROM items WHERE points > 50 ORDER BY created_at DESC LIMIT ?", limit)
 	if err != nil {
 		slog.Error("Failed to query database", "error", err)
 		os.Exit(1)
@@ -186,7 +193,7 @@ func getAllItems(db *sql.DB, limit int) []HackerNewsItem {
 	var items []HackerNewsItem
 	for rows.Next() {
 		var item HackerNewsItem
-		err := rows.Scan(&item.Title, &item.Link, &item.CommentsLink, &item.Points, &item.CommentCount, &item.Author, &item.CreatedAt, &item.UpdatedAt)
+		err := rows.Scan(&item.ItemID, &item.Title, &item.Link, &item.CommentsLink, &item.Points, &item.CommentCount, &item.Author, &item.CreatedAt, &item.UpdatedAt)
 		if err != nil {
 			slog.Error("Error scanning row", "error", err)
 			continue
@@ -194,11 +201,19 @@ func getAllItems(db *sql.DB, limit int) []HackerNewsItem {
 		items = append(items, item)
 	}
 
+	slog.Debug("Retrieved items from database", "count", len(items))
 	return items
 }
 
 func updateItemStats(db *sql.DB, items []HackerNewsItem) {
+	slog.Debug("Updating item stats", "itemCount", len(items))
 	for _, item := range items {
+		// Skip items with empty ItemID
+		if item.ItemID == "" {
+			slog.Warn("Skipping item with empty ItemID", "title", item.Title)
+			continue
+		}
+
 		// Fetch current stats from Algolia API
 		url := fmt.Sprintf("https://hn.algolia.com/api/v1/items/%s", item.ItemID)
 		res, err := http.Get(url)
@@ -243,6 +258,7 @@ func updateItemStats(db *sql.DB, items []HackerNewsItem) {
 }
 
 func generateRSSFeed(items []HackerNewsItem) string {
+	slog.Debug("Generating RSS feed", "itemCount", len(items))
 	now := time.Now()
 	feed := &feeds.Feed{
 		Title:       "Hacker News RSS Feed",
@@ -303,6 +319,7 @@ func generateRSSFeed(items []HackerNewsItem) string {
 		os.Exit(1)
 	}
 
+	slog.Debug("RSS feed generated successfully", "feedSize", len(rss))
 	return rss
 }
 
@@ -344,14 +361,21 @@ func updateAndSaveFeed(outDir string) {
 }
 
 func main() {
-	// Configure log
-	slog.SetDefault(slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{
-		Level: slog.LevelWarn, // Only show warnings and above by default
-	})))
-
-	// Define and parse the outdir flag
+	// Define and parse command line flags
 	outDir := flag.String("outdir", ".", "directory where the RSS feed file will be saved")
+	debug := flag.Bool("debug", false, "enable debug logging")
 	flag.Parse()
 
+	// Configure log level based on debug flag
+	logLevel := slog.LevelWarn
+	if *debug {
+		logLevel = slog.LevelDebug
+	}
+	
+	slog.SetDefault(slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{
+		Level: logLevel,
+	})))
+
+	slog.Debug("Starting application", "outDir", *outDir, "debugMode", *debug)
 	updateAndSaveFeed(*outDir)
 }
