@@ -2,6 +2,7 @@ package main
 
 import (
 	"database/sql"
+	"encoding/json"
 	"flag"
 	"fmt"
 	"net/http"
@@ -12,7 +13,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/PuerkitoBio/goquery"
 	"github.com/gorilla/feeds"
 	log "github.com/sirupsen/logrus"
 	_ "modernc.org/sqlite" // Pure Go SQLite driver
@@ -28,6 +28,20 @@ type HackerNewsItem struct {
 	Author       string
 	CreatedAt    time.Time
 	UpdatedAt    time.Time
+}
+
+type AlgoliaResponse struct {
+	Hits []AlgoliaHit `json:"hits"`
+}
+
+type AlgoliaHit struct {
+	ObjectID     string `json:"objectID"`
+	Title        string `json:"title"`
+	URL          string `json:"url"`
+	Author       string `json:"author"`
+	Points       int    `json:"points"`
+	NumComments  int    `json:"num_comments"`
+	CreatedAt    string `json:"created_at"`
 }
 
 func initDB() *sql.DB {
@@ -68,7 +82,7 @@ func initDB() *sql.DB {
 }
 
 func fetchHackerNewsItems() []HackerNewsItem {
-	res, err := http.Get("https://news.ycombinator.com")
+	res, err := http.Get("https://hn.algolia.com/api/v1/search_by_date?tags=front_page&hitsPerPage=100")
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -78,61 +92,51 @@ func fetchHackerNewsItems() []HackerNewsItem {
 		log.Fatalf("status code error: %d %s", res.StatusCode, res.Status)
 	}
 
-	doc, err := goquery.NewDocumentFromReader(res.Body)
-	if err != nil {
+	var algoliaResp AlgoliaResponse
+	if err := json.NewDecoder(res.Body).Decode(&algoliaResp); err != nil {
 		log.Fatal(err)
 	}
 
 	var items []HackerNewsItem
 	now := time.Now()
 
-	doc.Find(".athing").Each(func(i int, s *goquery.Selection) {
-		title := s.Find(".titleline > a:first-child").Text()
-		link, _ := s.Find(".titleline > a:first-child").Attr("href")
-		itemIdStr := s.AttrOr("id", "") // Hacker News item ID
-
-		// Get the comments link from the subtext row
-		itemId := s.AttrOr("id", "")
-		commentsLink := fmt.Sprintf("https://news.ycombinator.com/item?id=%s", itemId)
-
-		subtext := s.Next()
-		points := subtext.Find(".score").Text()
-		commentCount := subtext.Find("a").Last().Text()
-		author := subtext.Find(".hnuser").Text()
-
-		// Parse the timestamp from the age span's title attribute
-		updatedAt := now
-		if ageSpan := subtext.Find(".age"); ageSpan.Length() > 0 {
-			if timestamp, exists := ageSpan.Attr("title"); exists {
-				// Parse the Unix timestamp from the title attribute
-				if unixTime, err := strconv.ParseInt(strings.Split(timestamp, " ")[1], 10, 64); err == nil {
-					updatedAt = time.Unix(unixTime, 0)
-				}
-			}
+	for _, hit := range algoliaResp.Hits {
+		// Parse the ISO 8601 timestamp
+		createdAt, err := time.Parse(time.RFC3339, hit.CreatedAt)
+		if err != nil {
+			log.WithError(err).WithField("timestamp", hit.CreatedAt).Warn("Failed to parse timestamp, using current time")
+			createdAt = now
 		}
 
+		// Generate comments link from object ID
+		commentsLink := fmt.Sprintf("https://news.ycombinator.com/item?id=%s", hit.ObjectID)
+
+		// Convert numeric fields to strings to match existing schema
+		points := strconv.Itoa(hit.Points)
+		commentCount := strconv.Itoa(hit.NumComments)
+
 		log.WithFields(log.Fields{
-			"title":        title,
-			"link":         link,
+			"title":        hit.Title,
+			"link":         hit.URL,
 			"commentsLink": commentsLink,
 			"points":       points,
 			"comments":     commentCount,
-			"author":       author,
-			"updatedAt":    updatedAt,
+			"author":       hit.Author,
+			"createdAt":    createdAt,
 		}).Debug("Found item")
 
 		items = append(items, HackerNewsItem{
-			ItemID:       itemIdStr, // Populate the new field
-			Title:        title,
-			Link:         link,
+			ItemID:       hit.ObjectID,
+			Title:        hit.Title,
+			Link:         hit.URL,
 			CommentsLink: commentsLink,
 			Points:       points,
 			CommentCount: commentCount,
-			Author:       author,
-			CreatedAt:    updatedAt,
-			UpdatedAt:    updatedAt,
+			Author:       hit.Author,
+			CreatedAt:    createdAt,
+			UpdatedAt:    now,
 		})
-	})
+	}
 
 	return items
 }
