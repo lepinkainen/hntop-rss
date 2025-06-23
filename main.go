@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"flag"
 	"fmt"
+	"log/slog"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -14,7 +15,6 @@ import (
 	"time"
 
 	"github.com/gorilla/feeds"
-	log "github.com/sirupsen/logrus"
 	_ "modernc.org/sqlite" // Pure Go SQLite driver
 )
 
@@ -35,20 +35,21 @@ type AlgoliaResponse struct {
 }
 
 type AlgoliaHit struct {
-	ObjectID     string `json:"objectID"`
-	Title        string `json:"title"`
-	URL          string `json:"url"`
-	Author       string `json:"author"`
-	Points       int    `json:"points"`
-	NumComments  int    `json:"num_comments"`
-	CreatedAt    string `json:"created_at"`
+	ObjectID    string `json:"objectID"`
+	Title       string `json:"title"`
+	URL         string `json:"url"`
+	Author      string `json:"author"`
+	Points      int    `json:"points"`
+	NumComments int    `json:"num_comments"`
+	CreatedAt   string `json:"created_at"`
 }
 
 func initDB() *sql.DB {
 	// Get the directory of the executable
 	exePath, err := os.Executable()
 	if err != nil {
-		log.Fatalf("Error getting executable path: %v", err)
+		slog.Error("Error getting executable path", "error", err)
+		os.Exit(1)
 	}
 	exeDir := filepath.Dir(exePath)
 	dbPath := filepath.Join(exeDir, "hackernews.db")
@@ -56,7 +57,8 @@ func initDB() *sql.DB {
 	// Open database in the executable's directory
 	db, err := sql.Open("sqlite", dbPath) // Use "sqlite" driver name
 	if err != nil {
-		log.Fatal(err)
+		slog.Error("Failed to open database", "error", err)
+		os.Exit(1)
 	}
 
 	// Create table if it doesn't exist
@@ -75,7 +77,8 @@ func initDB() *sql.DB {
 	)`
 	_, err = db.Exec(createTable)
 	if err != nil {
-		log.Fatal(err)
+		slog.Error("Failed to create table", "error", err)
+		os.Exit(1)
 	}
 
 	return db
@@ -84,17 +87,20 @@ func initDB() *sql.DB {
 func fetchHackerNewsItems() []HackerNewsItem {
 	res, err := http.Get("https://hn.algolia.com/api/v1/search_by_date?tags=front_page&hitsPerPage=100")
 	if err != nil {
-		log.Fatal(err)
+		slog.Error("Failed to fetch Hacker News items", "error", err)
+		os.Exit(1)
 	}
-	defer res.Body.Close()
+	defer func() { _ = res.Body.Close() }()
 
 	if res.StatusCode != 200 {
-		log.Fatalf("status code error: %d %s", res.StatusCode, res.Status)
+		slog.Error("HTTP status code error", "code", res.StatusCode, "status", res.Status)
+		os.Exit(1)
 	}
 
 	var algoliaResp AlgoliaResponse
 	if err := json.NewDecoder(res.Body).Decode(&algoliaResp); err != nil {
-		log.Fatal(err)
+		slog.Error("Failed to decode JSON response", "error", err)
+		os.Exit(1)
 	}
 
 	var items []HackerNewsItem
@@ -104,7 +110,7 @@ func fetchHackerNewsItems() []HackerNewsItem {
 		// Parse the ISO 8601 timestamp
 		createdAt, err := time.Parse(time.RFC3339, hit.CreatedAt)
 		if err != nil {
-			log.WithError(err).WithField("timestamp", hit.CreatedAt).Warn("Failed to parse timestamp, using current time")
+			slog.Warn("Failed to parse timestamp, using current time", "error", err, "timestamp", hit.CreatedAt)
 			createdAt = now
 		}
 
@@ -115,15 +121,14 @@ func fetchHackerNewsItems() []HackerNewsItem {
 		points := strconv.Itoa(hit.Points)
 		commentCount := strconv.Itoa(hit.NumComments)
 
-		log.WithFields(log.Fields{
-			"title":        hit.Title,
-			"link":         hit.URL,
-			"commentsLink": commentsLink,
-			"points":       points,
-			"comments":     commentCount,
-			"author":       hit.Author,
-			"createdAt":    createdAt,
-		}).Debug("Found item")
+		slog.Debug("Found item",
+			"title", hit.Title,
+			"link", hit.URL,
+			"commentsLink", commentsLink,
+			"points", points,
+			"comments", commentCount,
+			"author", hit.Author,
+			"createdAt", createdAt)
 
 		items = append(items, HackerNewsItem{
 			ItemID:       hit.ObjectID,
@@ -159,13 +164,13 @@ func updateStoredItems(db *sql.DB, newItems []HackerNewsItem) {
 			item.ItemID, item.Title, item.Link, item.CommentsLink, item.Points, item.CommentCount, item.Author, item.CreatedAt, item.UpdatedAt)
 
 		if err != nil {
-			log.WithError(err).WithField("hn_id", item.ItemID).Error("Error updating item")
+			slog.Error("Error updating item", "error", err, "hn_id", item.ItemID)
 			continue
 		}
 
 		rowsAffected, _ := result.RowsAffected()
 		if rowsAffected > 0 {
-			log.WithField("title", item.Title).WithField("hn_id", item.ItemID).Info("Processed item (added/updated in DB)")
+			slog.Info("Processed item (added/updated in DB)", "title", item.Title, "hn_id", item.ItemID)
 		}
 	}
 }
@@ -173,16 +178,17 @@ func updateStoredItems(db *sql.DB, newItems []HackerNewsItem) {
 func getAllItems(db *sql.DB) []HackerNewsItem {
 	rows, err := db.Query("SELECT title, link, comments_link, points, comment_count, author, created_at, updated_at FROM items WHERE points > 50 ORDER BY created_at DESC LIMIT 30")
 	if err != nil {
-		log.Fatal(err)
+		slog.Error("Failed to query database", "error", err)
+		os.Exit(1)
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	var items []HackerNewsItem
 	for rows.Next() {
 		var item HackerNewsItem
 		err := rows.Scan(&item.Title, &item.Link, &item.CommentsLink, &item.Points, &item.CommentCount, &item.Author, &item.CreatedAt, &item.UpdatedAt)
 		if err != nil {
-			log.WithError(err).Error("Error scanning row")
+			slog.Error("Error scanning row", "error", err)
 			continue
 		}
 		items = append(items, item)
@@ -254,7 +260,8 @@ func generateRSSFeed(items []HackerNewsItem) string {
 
 	rss, err := feed.ToAtom()
 	if err != nil {
-		log.Fatal(err)
+		slog.Error("Failed to generate RSS feed", "error", err)
+		os.Exit(1)
 	}
 
 	return rss
@@ -262,7 +269,7 @@ func generateRSSFeed(items []HackerNewsItem) string {
 
 func updateAndSaveFeed(outDir string) {
 	db := initDB()
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	// Fetch current front page items
 	newItems := fetchHackerNewsItems()
@@ -276,7 +283,8 @@ func updateAndSaveFeed(outDir string) {
 	// Ensure output directory exists
 	err := os.MkdirAll(outDir, 0755)
 	if err != nil {
-		log.Fatalf("Error creating output directory: %v", err)
+		slog.Error("Error creating output directory", "error", err)
+		os.Exit(1)
 	}
 
 	// Generate and save the feed
@@ -284,20 +292,17 @@ func updateAndSaveFeed(outDir string) {
 	rss := generateRSSFeed(allItems)
 	err = os.WriteFile(filename, []byte(rss), 0644)
 	if err != nil {
-		log.Fatalf("Error writing RSS feed to file: %v", err)
+		slog.Error("Error writing RSS feed to file", "error", err)
+		os.Exit(1)
 	}
-	log.WithFields(log.Fields{
-		"count":    len(allItems),
-		"filename": filename,
-	}).Info("RSS feed saved")
+	slog.Info("RSS feed saved", "count", len(allItems), "filename", filename)
 }
 
 func main() {
 	// Configure log
-	log.SetFormatter(&log.TextFormatter{
-		FullTimestamp: true,
-	})
-	log.SetLevel(log.WarnLevel) // Only show warnings and above by default
+	slog.SetDefault(slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{
+		Level: slog.LevelWarn, // Only show warnings and above by default
+	})))
 
 	// Define and parse the outdir flag
 	outDir := flag.String("outdir", ".", "directory where the RSS feed file will be saved")

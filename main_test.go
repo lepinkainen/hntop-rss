@@ -59,7 +59,7 @@ func setupTestDB() *sql.DB {
 		created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
 		updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 	)`
-	
+
 	_, err = db.Exec(createTable)
 	if err != nil {
 		panic(err)
@@ -551,8 +551,8 @@ func TestHackerNewsItemTransformation(t *testing.T) {
 	}
 
 	commentsLink := "https://news.ycombinator.com/item?id=" + hit.ObjectID
-	points := "75"        // strconv.Itoa(hit.Points)
-	commentCount := "25"  // strconv.Itoa(hit.NumComments)
+	points := "75"       // strconv.Itoa(hit.Points)
+	commentCount := "25" // strconv.Itoa(hit.NumComments)
 
 	item := HackerNewsItem{
 		ItemID:       hit.ObjectID,
@@ -622,10 +622,10 @@ func TestTimestampParsing_EdgeCases(t *testing.T) {
 
 func TestPointsAndCommentsFormatting(t *testing.T) {
 	testCases := []struct {
-		name           string
-		points         int
-		comments       int
-		expectedPoints string
+		name             string
+		points           int
+		comments         int
+		expectedPoints   string
 		expectedComments string
 	}{
 		{"single digit", 5, 3, "5", "3"},
