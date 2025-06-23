@@ -151,8 +151,10 @@ func fetchHackerNewsItems() []HackerNewsItem {
 	return items
 }
 
-func updateStoredItems(db *sql.DB, newItems []HackerNewsItem) {
+func updateStoredItems(db *sql.DB, newItems []HackerNewsItem) map[string]bool {
 	slog.Debug("Updating stored items", "itemCount", len(newItems))
+	updatedItems := make(map[string]bool)
+	
 	for _, item := range newItems {
 		// The 'item.CreatedAt' should be the original submission time of the HN post.
 		// The 'item.UpdatedAt' should be when it was last seen/modified by your scraper.
@@ -177,8 +179,11 @@ func updateStoredItems(db *sql.DB, newItems []HackerNewsItem) {
 		rowsAffected, _ := result.RowsAffected()
 		if rowsAffected > 0 {
 			slog.Info("Processed item (added/updated in DB)", "title", item.Title, "hn_id", item.ItemID)
+			updatedItems[item.ItemID] = true
 		}
 	}
+	
+	return updatedItems
 }
 
 func getAllItems(db *sql.DB, limit int) []HackerNewsItem {
@@ -205,12 +210,21 @@ func getAllItems(db *sql.DB, limit int) []HackerNewsItem {
 	return items
 }
 
-func updateItemStats(db *sql.DB, items []HackerNewsItem) {
+func updateItemStats(db *sql.DB, items []HackerNewsItem, recentlyUpdated map[string]bool) {
 	slog.Debug("Updating item stats", "itemCount", len(items))
+	skippedCount := 0
+	
 	for _, item := range items {
 		// Skip items with empty ItemID
 		if item.ItemID == "" {
 			slog.Warn("Skipping item with empty ItemID", "title", item.Title)
+			continue
+		}
+
+		// Skip items that were just updated in updateStoredItems
+		if recentlyUpdated[item.ItemID] {
+			slog.Debug("Skipping recently updated item", "hn_id", item.ItemID)
+			skippedCount++
 			continue
 		}
 
@@ -254,6 +268,10 @@ func updateItemStats(db *sql.DB, items []HackerNewsItem) {
 		}
 
 		slog.Debug("Updated item stats", "hn_id", item.ItemID, "points", points, "comments", commentCount)
+	}
+	
+	if skippedCount > 0 {
+		slog.Debug("Skipped recently updated items", "count", skippedCount)
 	}
 }
 
@@ -330,14 +348,14 @@ func updateAndSaveFeed(outDir string) {
 	// Fetch current front page items
 	newItems := fetchHackerNewsItems()
 
-	// Update database with new items
-	updateStoredItems(db, newItems)
+	// Update database with new items and get list of updated item IDs
+	recentlyUpdated := updateStoredItems(db, newItems)
 
 	// Get all items from database
 	allItems := getAllItems(db, 30)
 
-	// Update item stats with current data from Algolia
-	updateItemStats(db, allItems)
+	// Update item stats with current data from Algolia, skipping recently updated items
+	updateItemStats(db, allItems, recentlyUpdated)
 
 	// Re-fetch items to get updated stats for RSS generation
 	allItems = getAllItems(db, 30)
