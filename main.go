@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"database/sql"
 	"encoding/json"
 	"flag"
@@ -12,6 +13,7 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/gorilla/feeds"
@@ -154,7 +156,7 @@ func fetchHackerNewsItems() []HackerNewsItem {
 func updateStoredItems(db *sql.DB, newItems []HackerNewsItem) map[string]bool {
 	slog.Debug("Updating stored items", "itemCount", len(newItems))
 	updatedItems := make(map[string]bool)
-	
+
 	for _, item := range newItems {
 		// The 'item.CreatedAt' should be the original submission time of the HN post.
 		// The 'item.UpdatedAt' should be when it was last seen/modified by your scraper.
@@ -182,7 +184,7 @@ func updateStoredItems(db *sql.DB, newItems []HackerNewsItem) map[string]bool {
 			updatedItems[item.ItemID] = true
 		}
 	}
-	
+
 	return updatedItems
 }
 
@@ -210,10 +212,20 @@ func getAllItems(db *sql.DB, limit int) []HackerNewsItem {
 	return items
 }
 
+type statsUpdate struct {
+	itemID       string
+	points       string
+	commentCount string
+	err          error
+	isDeadItem   bool
+}
+
 func updateItemStats(db *sql.DB, items []HackerNewsItem, recentlyUpdated map[string]bool) {
 	slog.Debug("Updating item stats", "itemCount", len(items))
 	skippedCount := 0
-	
+
+	// Filter items that need updating
+	var itemsToUpdate []HackerNewsItem
 	for _, item := range items {
 		// Skip items with empty ItemID
 		if item.ItemID == "" {
@@ -228,50 +240,131 @@ func updateItemStats(db *sql.DB, items []HackerNewsItem, recentlyUpdated map[str
 			continue
 		}
 
-		// Fetch current stats from Algolia API
-		url := fmt.Sprintf("https://hn.algolia.com/api/v1/items/%s", item.ItemID)
-		res, err := http.Get(url)
-		if err != nil {
-			slog.Warn("Failed to fetch item stats from Algolia", "error", err, "hn_id", item.ItemID)
-			continue
-		}
+		itemsToUpdate = append(itemsToUpdate, item)
+	}
 
-		if res.StatusCode != 200 {
-			slog.Warn("HTTP error fetching item stats", "code", res.StatusCode, "hn_id", item.ItemID)
-			_ = res.Body.Close()
-			continue
+	if len(itemsToUpdate) == 0 {
+		if skippedCount > 0 {
+			slog.Debug("Skipped recently updated items", "count", skippedCount)
 		}
+		return
+	}
 
-		var algoliaItem AlgoliaHit
-		if err := json.NewDecoder(res.Body).Decode(&algoliaItem); err != nil {
-			slog.Warn("Failed to decode Algolia response", "error", err, "hn_id", item.ItemID)
-			_ = res.Body.Close()
+	// Create worker pool for concurrent API calls
+	const numWorkers = 10
+	workChan := make(chan HackerNewsItem, len(itemsToUpdate))
+	resultChan := make(chan statsUpdate, len(itemsToUpdate))
+	var wg sync.WaitGroup
+
+	// Start workers
+	for range numWorkers {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for item := range workChan {
+				update := fetchItemStats(item.ItemID)
+				resultChan <- update
+			}
+		}()
+	}
+
+	// Send work to workers
+	for _, item := range itemsToUpdate {
+		workChan <- item
+	}
+	close(workChan)
+
+	// Wait for all workers to complete
+	go func() {
+		wg.Wait()
+		close(resultChan)
+	}()
+
+	// Process results and update database
+	updatedCount := 0
+	deletedCount := 0
+	for update := range resultChan {
+		if update.err != nil {
+			if update.isDeadItem {
+				// Delete the dead item from database
+				_, err := db.Exec(`DELETE FROM items WHERE item_hn_id = ?`, update.itemID)
+				if err != nil {
+					slog.Warn("Failed to delete dead item from database", "error", err, "hn_id", update.itemID)
+				} else {
+					slog.Info("Deleted dead item from database", "hn_id", update.itemID)
+					deletedCount++
+				}
+			} else {
+				slog.Warn("Failed to fetch item stats from Algolia", "error", update.err, "hn_id", update.itemID)
+			}
 			continue
 		}
-		_ = res.Body.Close()
 
 		// Update database with current stats
-		points := strconv.Itoa(algoliaItem.Points)
-		commentCount := strconv.Itoa(algoliaItem.NumComments)
-		
-		_, err = db.Exec(`
+		_, err := db.Exec(`
 			UPDATE items SET 
 				points = ?, 
 				comment_count = ?, 
 				updated_at = ?
 			WHERE item_hn_id = ?`,
-			points, commentCount, time.Now(), item.ItemID)
-		
+			update.points, update.commentCount, time.Now(), update.itemID)
+
 		if err != nil {
-			slog.Warn("Failed to update item stats in database", "error", err, "hn_id", item.ItemID)
+			slog.Warn("Failed to update item stats in database", "error", err, "hn_id", update.itemID)
 			continue
 		}
 
-		slog.Debug("Updated item stats", "hn_id", item.ItemID, "points", points, "comments", commentCount)
+		slog.Debug("Updated item stats", "hn_id", update.itemID, "points", update.points, "comments", update.commentCount)
+		updatedCount++
 	}
-	
-	if skippedCount > 0 {
-		slog.Debug("Skipped recently updated items", "count", skippedCount)
+
+	slog.Debug("Completed stats update", "updated", updatedCount, "deleted", deletedCount, "skipped", skippedCount)
+}
+
+func fetchItemStats(itemID string) statsUpdate {
+	// Create context with timeout
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
+	// Fetch current stats from Algolia API
+	url := fmt.Sprintf("https://hn.algolia.com/api/v1/items/%s", itemID)
+	req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
+	if err != nil {
+		return statsUpdate{itemID: itemID, err: err}
+	}
+
+	res, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return statsUpdate{itemID: itemID, err: err}
+	}
+	defer func() { _ = res.Body.Close() }()
+
+	if res.StatusCode == 429 {
+		slog.Error("Rate limit exceeded (429) from Algolia API", "hn_id", itemID)
+		return statsUpdate{itemID: itemID, err: fmt.Errorf("rate limit exceeded (429)")}
+	}
+
+	if res.StatusCode == 404 {
+		return statsUpdate{itemID: itemID, isDeadItem: true, err: fmt.Errorf("item not found (dead/flagged)")}
+	}
+
+	if res.StatusCode != 200 {
+		return statsUpdate{itemID: itemID, err: fmt.Errorf("HTTP error %d", res.StatusCode)}
+	}
+
+	var algoliaItem AlgoliaHit
+	if err := json.NewDecoder(res.Body).Decode(&algoliaItem); err != nil {
+		return statsUpdate{itemID: itemID, err: fmt.Errorf("failed to decode JSON: %w", err)}
+	}
+
+	points := strconv.Itoa(algoliaItem.Points)
+	commentCount := strconv.Itoa(algoliaItem.NumComments)
+
+	return statsUpdate{
+		itemID:       itemID,
+		points:       points,
+		commentCount: commentCount,
+		err:          nil,
 	}
 }
 
@@ -389,7 +482,7 @@ func main() {
 	if *debug {
 		logLevel = slog.LevelDebug
 	}
-	
+
 	slog.SetDefault(slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{
 		Level: logLevel,
 	})))
