@@ -39,3 +39,25 @@ type statsUpdate struct {
 	err          error
 	isDeadItem   bool
 }
+
+// OpenGraphData represents extracted OpenGraph metadata from a webpage
+type OpenGraphData struct {
+	URL         string
+	Title       string
+	Description string
+	Image       string
+	SiteName    string
+}
+
+// OpenGraphCache represents cached OpenGraph data in the database
+type OpenGraphCache struct {
+	ID           int
+	URL          string
+	Title        string
+	Description  string
+	Image        string
+	SiteName     string
+	FetchedAt    time.Time
+	ExpiresAt    time.Time
+	FetchSuccess bool
+}

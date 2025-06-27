@@ -12,6 +12,11 @@ func updateAndSaveFeed(outDir string, minPoints int) {
 	db := initDB()
 	defer func() { _ = db.Close() }()
 
+	// Clean up expired OpenGraph cache entries
+	if err := cleanupExpiredOpenGraphCache(db); err != nil {
+		slog.Warn("Failed to cleanup expired OpenGraph cache", "error", err)
+	}
+
 	// Fetch current front page items
 	newItems := fetchHackerNewsItems()
 
@@ -36,7 +41,7 @@ func updateAndSaveFeed(outDir string, minPoints int) {
 
 	// Generate and save the feed
 	filename := filepath.Join(outDir, "hntop30.xml")
-	rss := generateRSSFeed(allItems, minPoints)
+	rss := generateRSSFeed(db, allItems, minPoints)
 	err = os.WriteFile(filename, []byte(rss), 0644)
 	if err != nil {
 		slog.Error("Error writing RSS feed to file", "error", err)

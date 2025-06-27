@@ -11,7 +11,7 @@ import (
 
 func TestGenerateRSSFeed_EmptyItems(t *testing.T) {
 	items := []HackerNewsItem{}
-	rss := generateRSSFeed(items, 50)
+	rss := generateRSSFeed(nil, items, 50)
 
 	if !strings.Contains(rss, "Hacker News Top") {
 		t.Error("RSS feed should contain the title")
@@ -39,7 +39,7 @@ func TestGenerateRSSFeed_SingleItem(t *testing.T) {
 		},
 	}
 
-	rss := generateRSSFeed(items, 50)
+	rss := generateRSSFeed(nil, items, 50)
 
 	// Check for feed structure
 	if !strings.Contains(rss, "Hacker News Top") {
@@ -91,7 +91,7 @@ func TestGenerateRSSFeed_MultipleItems(t *testing.T) {
 		},
 	}
 
-	rss := generateRSSFeed(items, 50)
+	rss := generateRSSFeed(nil, items, 50)
 
 	// Check both items are present
 	if !strings.Contains(rss, "First Article") {
@@ -145,7 +145,7 @@ func TestGenerateRSSFeed_PointsFormatting(t *testing.T) {
 				},
 			}
 
-			rss := generateRSSFeed(items, 50)
+			rss := generateRSSFeed(nil, items, 50)
 			if !strings.Contains(rss, tc.expected) {
 				t.Errorf("Expected '%s' in RSS feed, but it was not found", tc.expected)
 			}

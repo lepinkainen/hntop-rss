@@ -2,9 +2,11 @@ package main
 
 import (
 	"database/sql"
+	"fmt"
 	"log/slog"
 	"os"
 	"path/filepath"
+	"time"
 
 	_ "modernc.org/sqlite" // Pure Go SQLite driver
 )
@@ -28,8 +30,8 @@ func initDB() *sql.DB {
 		os.Exit(1)
 	}
 
-	// Create table if it doesn't exist
-	createTable := `
+	// Create items table if it doesn't exist
+	createItemsTable := `
 	CREATE TABLE IF NOT EXISTS items (
 		id INTEGER PRIMARY KEY AUTOINCREMENT,      -- Internal row ID (optional, but common)
 		item_hn_id TEXT NOT NULL UNIQUE,        -- Hacker News Item ID, for deduplication
@@ -42,10 +44,42 @@ func initDB() *sql.DB {
 		created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
 		updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 	)`
-	_, err = db.Exec(createTable)
+	_, err = db.Exec(createItemsTable)
 	if err != nil {
-		slog.Error("Failed to create table", "error", err)
+		slog.Error("Failed to create items table", "error", err)
 		os.Exit(1)
+	}
+
+	// Create OpenGraph cache table if it doesn't exist
+	createOGCacheTable := `
+	CREATE TABLE IF NOT EXISTS opengraph_cache (
+		id INTEGER PRIMARY KEY AUTOINCREMENT,
+		url TEXT NOT NULL UNIQUE,
+		title TEXT,
+		description TEXT,
+		image TEXT,
+		site_name TEXT,
+		fetched_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+		expires_at TIMESTAMP,
+		fetch_success BOOLEAN DEFAULT TRUE
+	)`
+	_, err = db.Exec(createOGCacheTable)
+	if err != nil {
+		slog.Error("Failed to create opengraph_cache table", "error", err)
+		os.Exit(1)
+	}
+
+	// Create indexes for opengraph_cache table
+	createOGIndexes := []string{
+		"CREATE INDEX IF NOT EXISTS idx_opengraph_url ON opengraph_cache(url)",
+		"CREATE INDEX IF NOT EXISTS idx_opengraph_expires ON opengraph_cache(expires_at)",
+	}
+	for _, indexSQL := range createOGIndexes {
+		_, err = db.Exec(indexSQL)
+		if err != nil {
+			slog.Error("Failed to create opengraph_cache index", "error", err)
+			os.Exit(1)
+		}
 	}
 	slog.Debug("Database initialized successfully")
 
@@ -111,4 +145,99 @@ func getAllItems(db *sql.DB, limit int, minPoints int) []HackerNewsItem {
 
 	slog.Debug("Retrieved items from database", "count", len(items))
 	return items
+}
+
+// getOpenGraphData retrieves cached OpenGraph data for a URL
+func getOpenGraphData(db *sql.DB, url string) (*OpenGraphCache, error) {
+	slog.Debug("Getting cached OpenGraph data", "url", url)
+	
+	query := `
+		SELECT id, url, title, description, image, site_name, fetched_at, expires_at, fetch_success 
+		FROM opengraph_cache 
+		WHERE url = ? AND expires_at > ?`
+	
+	var cache OpenGraphCache
+	err := db.QueryRow(query, url, time.Now()).Scan(
+		&cache.ID,
+		&cache.URL,
+		&cache.Title,
+		&cache.Description,
+		&cache.Image,
+		&cache.SiteName,
+		&cache.FetchedAt,
+		&cache.ExpiresAt,
+		&cache.FetchSuccess,
+	)
+	
+	if err == sql.ErrNoRows {
+		slog.Debug("No cached OpenGraph data found", "url", url)
+		return nil, nil
+	}
+	
+	if err != nil {
+		return nil, fmt.Errorf("failed to query OpenGraph cache: %w", err)
+	}
+	
+	slog.Debug("Found cached OpenGraph data", "url", url, "title", cache.Title)
+	return &cache, nil
+}
+
+// cacheOpenGraphData stores OpenGraph data in the cache
+func cacheOpenGraphData(db *sql.DB, ogData *OpenGraphData, fetchSuccess bool) error {
+	slog.Debug("Caching OpenGraph data", "url", ogData.URL, "success", fetchSuccess)
+	
+	// Calculate expiry time: 7 days for successful fetches, 1 day for failures
+	var expiresAt time.Time
+	if fetchSuccess {
+		expiresAt = time.Now().Add(7 * 24 * time.Hour)
+	} else {
+		expiresAt = time.Now().Add(24 * time.Hour)
+	}
+	
+	query := `
+		INSERT INTO opengraph_cache (url, title, description, image, site_name, fetched_at, expires_at, fetch_success)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+		ON CONFLICT(url) DO UPDATE SET
+			title = excluded.title,
+			description = excluded.description,
+			image = excluded.image,
+			site_name = excluded.site_name,
+			fetched_at = excluded.fetched_at,
+			expires_at = excluded.expires_at,
+			fetch_success = excluded.fetch_success`
+	
+	_, err := db.Exec(query,
+		ogData.URL,
+		ogData.Title,
+		ogData.Description,
+		ogData.Image,
+		ogData.SiteName,
+		time.Now(),
+		expiresAt,
+		fetchSuccess,
+	)
+	
+	if err != nil {
+		return fmt.Errorf("failed to cache OpenGraph data: %w", err)
+	}
+	
+	slog.Debug("Successfully cached OpenGraph data", "url", ogData.URL)
+	return nil
+}
+
+// cleanupExpiredOpenGraphCache removes expired OpenGraph cache entries
+func cleanupExpiredOpenGraphCache(db *sql.DB) error {
+	slog.Debug("Cleaning up expired OpenGraph cache entries")
+	
+	result, err := db.Exec("DELETE FROM opengraph_cache WHERE expires_at < ?", time.Now())
+	if err != nil {
+		return fmt.Errorf("failed to cleanup expired cache: %w", err)
+	}
+	
+	rowsAffected, _ := result.RowsAffected()
+	if rowsAffected > 0 {
+		slog.Debug("Cleaned up expired OpenGraph cache entries", "count", rowsAffected)
+	}
+	
+	return nil
 }

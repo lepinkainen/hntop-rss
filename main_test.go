@@ -14,7 +14,7 @@ func TestUpdateAndSaveFeed_Integration(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to create temp directory: %v", err)
 	}
-	defer os.RemoveAll(tempDir)
+	defer func() { _ = os.RemoveAll(tempDir) }()
 
 	// This test would require mocking the HTTP calls or using a test database
 	// For now, we'll test that the function doesn't panic with valid parameters
@@ -47,11 +47,11 @@ func TestRSSFileGeneration(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to create temp directory: %v", err)
 	}
-	defer os.RemoveAll(tempDir)
+	defer func() { _ = os.RemoveAll(tempDir) }()
 
 	// Test RSS file creation with empty data
 	filename := filepath.Join(tempDir, "test.xml")
-	rssContent := generateRSSFeed([]HackerNewsItem{}, 50)
+	rssContent := generateRSSFeed(nil, []HackerNewsItem{}, 50)
 	
 	err = os.WriteFile(filename, []byte(rssContent), 0644)
 	if err != nil {

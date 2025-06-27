@@ -1,6 +1,8 @@
 package main
 
 import (
+	"context"
+	"database/sql"
 	"fmt"
 	"log/slog"
 	"os"
@@ -10,8 +12,70 @@ import (
 	"github.com/gorilla/feeds"
 )
 
-// generateRSSFeed creates an Atom RSS feed from the provided items
-func generateRSSFeed(items []HackerNewsItem, minPoints int) string {
+// getOpenGraphWithFallback fetches OpenGraph data with caching and fallback
+func getOpenGraphWithFallback(db *sql.DB, fetcher *OpenGraphFetcher, url string) *OpenGraphData {
+	// Skip OpenGraph fetching if database is nil (for testing)
+	if db == nil {
+		return nil
+	}
+	
+	// First check cache
+	cached, err := getOpenGraphData(db, url)
+	if err != nil {
+		slog.Warn("Error getting cached OpenGraph data", "error", err, "url", url)
+	}
+	
+	// Return cached data if available and successful
+	if cached != nil && cached.FetchSuccess {
+		return &OpenGraphData{
+			URL:         cached.URL,
+			Title:       cached.Title,
+			Description: cached.Description,
+			Image:       cached.Image,
+			SiteName:    cached.SiteName,
+		}
+	}
+	
+	// Skip fetching if we have a recent failed attempt
+	if cached != nil && !cached.FetchSuccess {
+		slog.Debug("Skipping OpenGraph fetch due to recent failure", "url", url)
+		return nil
+	}
+	
+	// Fetch fresh data
+	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	defer cancel()
+	
+	ogData, err := fetcher.FetchOpenGraph(ctx, url)
+	fetchSuccess := err == nil && ogData != nil
+	
+	if err != nil {
+		slog.Debug("Failed to fetch OpenGraph data", "error", err, "url", url)
+		// Cache the failure to avoid repeated attempts
+		if ogData == nil {
+			ogData = &OpenGraphData{URL: url}
+		}
+	} else if ogData != nil {
+		cleanOpenGraphData(ogData)
+		slog.Debug("Successfully fetched OpenGraph data", "url", url, "title", ogData.Title)
+	}
+	
+	// Cache the result (success or failure)
+	if ogData != nil {
+		if err := cacheOpenGraphData(db, ogData, fetchSuccess); err != nil {
+			slog.Warn("Failed to cache OpenGraph data", "error", err, "url", url)
+		}
+	}
+	
+	if fetchSuccess {
+		return ogData
+	}
+	
+	return nil
+}
+
+// generateRSSFeed creates an Atom RSS feed from the provided items with OpenGraph data
+func generateRSSFeed(db *sql.DB, items []HackerNewsItem, minPoints int) string {
 	slog.Debug("Generating RSS feed", "itemCount", len(items))
 	now := time.Now()
 	
@@ -25,6 +89,10 @@ func generateRSSFeed(items []HackerNewsItem, minPoints int) string {
 	}
 
 	domainRegex := regexp.MustCompile(`^https?://([^/]+)`)
+	
+	// Initialize OpenGraph fetcher
+	ogFetcher := NewOpenGraphFetcher()
+	slog.Debug("Initialized OpenGraph fetcher")
 
 	for _, item := range items {
 		// Extract domain from the article link
@@ -49,6 +117,39 @@ func generateRSSFeed(items []HackerNewsItem, minPoints int) string {
 		} else if engagementRatio > 0.3 {
 			engagementText = "💬 Good discussion"
 		}
+		
+		// Fetch OpenGraph data for the article
+		var ogPreview string
+		if item.Link != "" {
+			slog.Debug("Fetching OpenGraph data for item", "hn_id", item.ItemID, "url", item.Link)
+			ogData := getOpenGraphWithFallback(db, ogFetcher, item.Link)
+			if ogData != nil && (ogData.Title != "" || ogData.Description != "") {
+				ogPreview = fmt.Sprintf(`<div style="margin-bottom: 16px; padding: 12px; background: #f9f9f9; border-radius: 6px; border-left: 3px solid #007acc;">
+					<h4 style="margin: 0 0 8px 0; color: #007acc; font-size: 14px;">📄 Article Preview</h4>
+					%s
+					%s
+					%s
+				</div>`,
+					func() string {
+						if ogData.Title != "" && ogData.Title != item.Title {
+							return fmt.Sprintf(`<p style="margin: 0 0 6px 0; font-weight: bold; color: #333;">%s</p>`, ogData.Title)
+						}
+						return ""
+					}(),
+					func() string {
+						if ogData.Description != "" {
+							return fmt.Sprintf(`<p style="margin: 0 0 6px 0; color: #666; line-height: 1.4; font-size: 13px;">%s</p>`, ogData.Description)
+						}
+						return ""
+					}(),
+					func() string {
+						if ogData.Image != "" {
+							return fmt.Sprintf(`<img src="%s" alt="Article image" style="max-width: 100%%; height: auto; border-radius: 4px; margin-top: 8px;" loading="lazy">`, ogData.Image)
+						}
+						return ""
+					}())
+			}
+		}
 
 		// Enhanced HTML description with categories
 		categoryTags := ""
@@ -67,6 +168,8 @@ func generateRSSFeed(items []HackerNewsItem, minPoints int) string {
 				<span style="color: #828282;">%s</span>
 				%s
 			</div>
+			
+			%s
 			
 			%s
 			
@@ -93,6 +196,7 @@ func generateRSSFeed(items []HackerNewsItem, minPoints int) string {
 				return ""
 			}(),
 			categoryTags,
+			ogPreview,
 			domain,
 			item.Author,
 			item.CommentsLink,
