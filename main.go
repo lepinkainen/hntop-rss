@@ -12,7 +12,6 @@ import (
 	"path/filepath"
 	"regexp"
 	"strconv"
-	"strings"
 	"sync"
 	"time"
 
@@ -25,8 +24,8 @@ type HackerNewsItem struct {
 	Title        string
 	Link         string
 	CommentsLink string
-	Points       string
-	CommentCount string
+	Points       int
+	CommentCount int
 	Author       string
 	CreatedAt    time.Time
 	UpdatedAt    time.Time
@@ -72,8 +71,8 @@ func initDB() *sql.DB {
 		title TEXT NOT NULL,
 		link TEXT NOT NULL,                     -- The actual article URL
 		comments_link TEXT,
-		points TEXT,
-		comment_count TEXT,
+		points INTEGER DEFAULT 0,
+		comment_count INTEGER DEFAULT 0,
 		author TEXT,
 		created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
 		updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
@@ -123,9 +122,9 @@ func fetchHackerNewsItems() []HackerNewsItem {
 		// Generate comments link from object ID
 		commentsLink := fmt.Sprintf("https://news.ycombinator.com/item?id=%s", hit.ObjectID)
 
-		// Convert numeric fields to strings to match existing schema
-		points := strconv.Itoa(hit.Points)
-		commentCount := strconv.Itoa(hit.NumComments)
+		// Use numeric fields directly
+		points := hit.Points
+		commentCount := hit.NumComments
 
 		slog.Debug("Found item",
 			"title", hit.Title,
@@ -214,8 +213,8 @@ func getAllItems(db *sql.DB, limit int) []HackerNewsItem {
 
 type statsUpdate struct {
 	itemID       string
-	points       string
-	commentCount string
+	points       int
+	commentCount int
 	err          error
 	isDeadItem   bool
 }
@@ -357,13 +356,10 @@ func fetchItemStats(itemID string) statsUpdate {
 		return statsUpdate{itemID: itemID, err: fmt.Errorf("failed to decode JSON: %w", err)}
 	}
 
-	points := strconv.Itoa(algoliaItem.Points)
-	commentCount := strconv.Itoa(algoliaItem.NumComments)
-
 	return statsUpdate{
 		itemID:       itemID,
-		points:       points,
-		commentCount: commentCount,
+		points:       algoliaItem.Points,
+		commentCount: algoliaItem.NumComments,
 		err:          nil,
 	}
 }
@@ -382,7 +378,6 @@ func generateRSSFeed(items []HackerNewsItem) string {
 
 	// idRegex := regexp.MustCompile(`id=(\d+)`)
 	domainRegex := regexp.MustCompile(`^https?://([^/]+)`)
-	commentRegex := regexp.MustCompile(`(\d+)`)
 
 	for _, item := range items {
 		// Extract domain from the article link
@@ -391,15 +386,9 @@ func generateRSSFeed(items []HackerNewsItem) string {
 			domain = matches[1]
 		}
 
-		// Format points (remove "points" suffix if present)
-		points := strings.TrimSuffix(item.Points, " points")
-		points = strings.TrimSuffix(points, " point")
-
-		// Format comment count - just extract the digits portion
-		comments := item.CommentCount
-		if matches := commentRegex.FindStringSubmatch(item.CommentCount); len(matches) > 1 {
-			comments = matches[1]
-		}
+		// Convert integers to strings for display
+		points := strconv.Itoa(item.Points)
+		comments := strconv.Itoa(item.CommentCount)
 
 		feed.Items = append(feed.Items, &feeds.Item{
 			Title: item.Title,

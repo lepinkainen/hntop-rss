@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -53,8 +54,8 @@ func setupTestDB() *sql.DB {
 		title TEXT NOT NULL,
 		link TEXT NOT NULL,
 		comments_link TEXT,
-		points TEXT,
-		comment_count TEXT,
+		points INTEGER DEFAULT 0,
+		comment_count INTEGER DEFAULT 0,
 		author TEXT,
 		created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
 		updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
@@ -100,8 +101,8 @@ func TestGenerateRSSFeed_SingleItem(t *testing.T) {
 			Title:        "Test Article",
 			Link:         "https://example.com/test",
 			CommentsLink: "https://news.ycombinator.com/item?id=12345",
-			Points:       "75",
-			CommentCount: "25",
+			Points:       75,
+			CommentCount: 25,
 			Author:       "testuser",
 			CreatedAt:    time.Date(2024, 1, 1, 12, 0, 0, 0, time.UTC),
 			UpdatedAt:    time.Now(),
@@ -141,8 +142,8 @@ func TestGenerateRSSFeed_MultipleItems(t *testing.T) {
 			Title:        "First Article",
 			Link:         "https://example.com/first",
 			CommentsLink: "https://news.ycombinator.com/item?id=12345",
-			Points:       "75",
-			CommentCount: "25",
+			Points:       75,
+			CommentCount: 25,
 			Author:       "user1",
 			CreatedAt:    time.Date(2024, 1, 1, 12, 0, 0, 0, time.UTC),
 			UpdatedAt:    time.Now(),
@@ -152,8 +153,8 @@ func TestGenerateRSSFeed_MultipleItems(t *testing.T) {
 			Title:        "Second Article",
 			Link:         "https://github.com/test/repo",
 			CommentsLink: "https://news.ycombinator.com/item?id=67890",
-			Points:       "120",
-			CommentCount: "45",
+			Points:       120,
+			CommentCount: 45,
 			Author:       "user2",
 			CreatedAt:    time.Date(2024, 1, 1, 13, 0, 0, 0, time.UTC),
 			UpdatedAt:    time.Now(),
@@ -189,13 +190,13 @@ func TestGenerateRSSFeed_MultipleItems(t *testing.T) {
 func TestGenerateRSSFeed_PointsFormatting(t *testing.T) {
 	testCases := []struct {
 		name     string
-		points   string
+		points   int
 		expected string
 	}{
-		{"plain number", "75", "75 points"},
-		{"with points suffix", "75 points", "75 points"},
-		{"with point suffix", "1 point", "1 points"},
-		{"empty", "", " points"},
+		{"plain number", 75, "75 points"},
+		{"single digit", 5, "5 points"},
+		{"triple digit", 150, "150 points"},
+		{"zero", 0, "0 points"},
 	}
 
 	for _, tc := range testCases {
@@ -207,7 +208,7 @@ func TestGenerateRSSFeed_PointsFormatting(t *testing.T) {
 					Link:         "https://example.com/test",
 					CommentsLink: "https://news.ycombinator.com/item?id=12345",
 					Points:       tc.points,
-					CommentCount: "25",
+					CommentCount: 25,
 					Author:       "testuser",
 					CreatedAt:    time.Date(2024, 1, 1, 12, 0, 0, 0, time.UTC),
 					UpdatedAt:    time.Now(),
@@ -249,8 +250,8 @@ func TestUpdateStoredItems_NewItem(t *testing.T) {
 			Title:        "Test Article",
 			Link:         "https://example.com/test",
 			CommentsLink: "https://news.ycombinator.com/item?id=12345",
-			Points:       "75",
-			CommentCount: "25",
+			Points:       75,
+			CommentCount: 25,
 			Author:       "testuser",
 			CreatedAt:    time.Date(2024, 1, 1, 12, 0, 0, 0, time.UTC),
 			UpdatedAt:    time.Now(),
@@ -297,8 +298,8 @@ func TestUpdateStoredItems_UpdateExisting(t *testing.T) {
 			Title:        "Original Title",
 			Link:         "https://example.com/original",
 			CommentsLink: "https://news.ycombinator.com/item?id=12345",
-			Points:       "50",
-			CommentCount: "10",
+			Points:       50,
+			CommentCount: 10,
 			Author:       "original_user",
 			CreatedAt:    time.Date(2024, 1, 1, 12, 0, 0, 0, time.UTC),
 			UpdatedAt:    time.Date(2024, 1, 1, 12, 0, 0, 0, time.UTC),
@@ -313,8 +314,8 @@ func TestUpdateStoredItems_UpdateExisting(t *testing.T) {
 			Title:        "Updated Title",
 			Link:         "https://example.com/updated",
 			CommentsLink: "https://news.ycombinator.com/item?id=12345",
-			Points:       "75",
-			CommentCount: "25",
+			Points:       75,
+			CommentCount: 25,
 			Author:       "updated_user",
 			CreatedAt:    time.Date(2024, 1, 1, 12, 0, 0, 0, time.UTC), // Original creation time
 			UpdatedAt:    time.Date(2024, 1, 1, 13, 0, 0, 0, time.UTC), // New update time
@@ -333,7 +334,8 @@ func TestUpdateStoredItems_UpdateExisting(t *testing.T) {
 	}
 
 	// Check that the item was updated
-	var title, points string
+	var title string
+	var points int
 	err = db.QueryRow("SELECT title, points FROM items WHERE item_hn_id = ?", "12345").Scan(&title, &points)
 	if err != nil {
 		t.Fatalf("Error retrieving updated item: %v", err)
@@ -341,8 +343,8 @@ func TestUpdateStoredItems_UpdateExisting(t *testing.T) {
 	if title != "Updated Title" {
 		t.Errorf("Expected updated title 'Updated Title', got '%s'", title)
 	}
-	if points != "75" {
-		t.Errorf("Expected updated points '75', got '%s'", points)
+	if points != 75 {
+		t.Errorf("Expected updated points 75, got %d", points)
 	}
 }
 
@@ -357,8 +359,8 @@ func TestGetAllItems_FilterByPoints(t *testing.T) {
 			Title:        "High Points Article",
 			Link:         "https://example.com/high",
 			CommentsLink: "https://news.ycombinator.com/item?id=1",
-			Points:       "75", // Above 50
-			CommentCount: "25",
+			Points:       75, // Above 50
+			CommentCount: 25,
 			Author:       "user1",
 			CreatedAt:    time.Date(2024, 1, 1, 12, 0, 0, 0, time.UTC),
 			UpdatedAt:    time.Now(),
@@ -368,8 +370,8 @@ func TestGetAllItems_FilterByPoints(t *testing.T) {
 			Title:        "Low Points Article",
 			Link:         "https://example.com/low",
 			CommentsLink: "https://news.ycombinator.com/item?id=2",
-			Points:       "25", // Below 50
-			CommentCount: "5",
+			Points:       25, // Below 50
+			CommentCount: 5,
 			Author:       "user2",
 			CreatedAt:    time.Date(2024, 1, 1, 13, 0, 0, 0, time.UTC),
 			UpdatedAt:    time.Now(),
@@ -379,8 +381,8 @@ func TestGetAllItems_FilterByPoints(t *testing.T) {
 			Title:        "Medium Points Article",
 			Link:         "https://example.com/medium",
 			CommentsLink: "https://news.ycombinator.com/item?id=3",
-			Points:       "60", // Above 50
-			CommentCount: "15",
+			Points:       60, // Above 50
+			CommentCount: 15,
 			Author:       "user3",
 			CreatedAt:    time.Date(2024, 1, 1, 14, 0, 0, 0, time.UTC),
 			UpdatedAt:    time.Now(),
@@ -424,8 +426,8 @@ func TestGetAllItems_OrderByCreatedAt(t *testing.T) {
 			Title:        "Older Article",
 			Link:         "https://example.com/old",
 			CommentsLink: "https://news.ycombinator.com/item?id=1",
-			Points:       "75",
-			CommentCount: "25",
+			Points:       75,
+			CommentCount: 25,
 			Author:       "user1",
 			CreatedAt:    time.Date(2024, 1, 1, 10, 0, 0, 0, time.UTC), // Earlier
 			UpdatedAt:    time.Now(),
@@ -435,8 +437,8 @@ func TestGetAllItems_OrderByCreatedAt(t *testing.T) {
 			Title:        "Newer Article",
 			Link:         "https://example.com/new",
 			CommentsLink: "https://news.ycombinator.com/item?id=2",
-			Points:       "60",
-			CommentCount: "15",
+			Points:       60,
+			CommentCount: 15,
 			Author:       "user2",
 			CreatedAt:    time.Date(2024, 1, 1, 15, 0, 0, 0, time.UTC), // Later
 			UpdatedAt:    time.Now(),
@@ -551,16 +553,14 @@ func TestHackerNewsItemTransformation(t *testing.T) {
 	}
 
 	commentsLink := "https://news.ycombinator.com/item?id=" + hit.ObjectID
-	points := "75"       // strconv.Itoa(hit.Points)
-	commentCount := "25" // strconv.Itoa(hit.NumComments)
 
 	item := HackerNewsItem{
 		ItemID:       hit.ObjectID,
 		Title:        hit.Title,
 		Link:         hit.URL,
 		CommentsLink: commentsLink,
-		Points:       points,
-		CommentCount: commentCount,
+		Points:       hit.Points,
+		CommentCount: hit.NumComments,
 		Author:       hit.Author,
 		CreatedAt:    createdAt,
 		UpdatedAt:    now,
@@ -579,11 +579,11 @@ func TestHackerNewsItemTransformation(t *testing.T) {
 	if item.CommentsLink != "https://news.ycombinator.com/item?id=12345" {
 		t.Errorf("Expected CommentsLink 'https://news.ycombinator.com/item?id=12345', got '%s'", item.CommentsLink)
 	}
-	if item.Points != "75" {
-		t.Errorf("Expected Points '75', got '%s'", item.Points)
+	if item.Points != 75 {
+		t.Errorf("Expected Points 75, got %d", item.Points)
 	}
-	if item.CommentCount != "25" {
-		t.Errorf("Expected CommentCount '25', got '%s'", item.CommentCount)
+	if item.CommentCount != 25 {
+		t.Errorf("Expected CommentCount 25, got %d", item.CommentCount)
 	}
 	if item.Author != "testuser" {
 		t.Errorf("Expected Author 'testuser', got '%s'", item.Author)
@@ -636,11 +636,11 @@ func TestPointsAndCommentsFormatting(t *testing.T) {
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			// Test the conversion logic used in fetchHackerNewsItems
-			points := "75"   // In real code: strconv.Itoa(tc.points)
-			comments := "25" // In real code: strconv.Itoa(tc.comments)
+			// Test the conversion logic used in RSS generation
+			points := strconv.Itoa(tc.points)
+			comments := strconv.Itoa(tc.comments)
 
-			// For this test, we'll just verify the concept works
+			// Verify the conversion works correctly
 			if len(points) == 0 {
 				t.Error("Points string should not be empty")
 			}
