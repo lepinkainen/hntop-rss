@@ -133,6 +133,90 @@ tasks:
             echo "dev-$(git rev-parse --short HEAD)"
           fi
 
+  build-linux-amd64-ci:
+    desc: Cross-compile for Linux AMD64 (CI - no test/lint deps)
+    deps:
+      - clean
+    cmds:
+      - mkdir -p {{.BUILDDIR}}
+      - >
+        GOOS=linux GOARCH=amd64 go build 
+        -ldflags="-X main.Version={{.VERSION}} -w -s" 
+        -o {{.BUILDDIR}}/{{.FUNCNAME}}-linux-amd64
+    generates:
+      - "{{.BUILDDIR}}/{{.FUNCNAME}}-linux-amd64"
+    vars:
+      VERSION:
+        sh: |
+          if [ -n "${VERSION}" ]; then
+            echo "${VERSION}"
+          else
+            echo "dev-$(git rev-parse --short HEAD)"
+          fi
+
+  build-darwin-amd64-ci:
+    desc: Cross-compile for macOS Intel (CI - no test/lint deps)
+    deps:
+      - clean
+    cmds:
+      - mkdir -p {{.BUILDDIR}}
+      - >
+        GOOS=darwin GOARCH=amd64 go build 
+        -ldflags="-X main.Version={{.VERSION}} -w -s" 
+        -o {{.BUILDDIR}}/{{.FUNCNAME}}-darwin-amd64
+    generates:
+      - "{{.BUILDDIR}}/{{.FUNCNAME}}-darwin-amd64"
+    vars:
+      VERSION:
+        sh: |
+          if [ -n "${VERSION}" ]; then
+            echo "${VERSION}"
+          else
+            echo "dev-$(git rev-parse --short HEAD)"
+          fi
+
+  build-darwin-arm64-ci:
+    desc: Cross-compile for macOS Apple Silicon (CI - no test/lint deps)
+    deps:
+      - clean
+    cmds:
+      - mkdir -p {{.BUILDDIR}}
+      - >
+        GOOS=darwin GOARCH=arm64 go build 
+        -ldflags="-X main.Version={{.VERSION}} -w -s" 
+        -o {{.BUILDDIR}}/{{.FUNCNAME}}-darwin-arm64
+    generates:
+      - "{{.BUILDDIR}}/{{.FUNCNAME}}-darwin-arm64"
+    vars:
+      VERSION:
+        sh: |
+          if [ -n "${VERSION}" ]; then
+            echo "${VERSION}"
+          else
+            echo "dev-$(git rev-parse --short HEAD)"
+          fi
+
+  build-windows-ci:
+    desc: Cross-compile for Windows AMD64 (CI - no test/lint deps)
+    deps:
+      - clean
+    cmds:
+      - mkdir -p {{.BUILDDIR}}
+      - >
+        GOOS=windows GOARCH=amd64 go build 
+        -ldflags="-X main.Version={{.VERSION}} -w -s" 
+        -o {{.BUILDDIR}}/{{.FUNCNAME}}-windows-amd64.exe
+    generates:
+      - "{{.BUILDDIR}}/{{.FUNCNAME}}-windows-amd64.exe"
+    vars:
+      VERSION:
+        sh: |
+          if [ -n "${VERSION}" ]; then
+            echo "${VERSION}"
+          else
+            echo "dev-$(git rev-parse --short HEAD)"
+          fi
+
   build-all-platforms:
     desc: Build for all supported platforms
     deps:

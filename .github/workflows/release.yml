@@ -76,16 +76,16 @@ jobs:
           echo "tag=v${{ env.MAJOR_VERSION }}.${{ github.run_number }}" >> $GITHUB_OUTPUT
 
       - name: Build for Linux AMD64
-        run: VERSION=${{ env.VERSION }} task build-linux-amd64
+        run: VERSION=${{ env.VERSION }} task build-linux-amd64-ci
 
       - name: Build for Darwin AMD64
-        run: VERSION=${{ env.VERSION }} task build-darwin-amd64
+        run: VERSION=${{ env.VERSION }} task build-darwin-amd64-ci
 
       - name: Build for Darwin ARM64
-        run: VERSION=${{ env.VERSION }} task build-darwin-arm64
+        run: VERSION=${{ env.VERSION }} task build-darwin-arm64-ci
 
       - name: Build for Windows AMD64
-        run: VERSION=${{ env.VERSION }} task build-windows
+        run: VERSION=${{ env.VERSION }} task build-windows-ci
 
       - name: Create Release
         uses: softprops/action-gh-release@v2
