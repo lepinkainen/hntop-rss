@@ -22,39 +22,39 @@ type AtomCategory struct {
 }
 
 type CustomAtomEntry struct {
-	XMLName     xml.Name                `xml:"entry"`
-	Xmlns       string                  `xml:"xmlns,attr,omitempty"`
-	Title       string                  `xml:"title"`
-	Updated     string                  `xml:"updated"`
-	Id          string                  `xml:"id"`
-	Categories  []AtomCategory          `xml:"category"`
-	Content     *feeds.AtomContent      `xml:"content,omitempty"`
-	Rights      string                  `xml:"rights,omitempty"`
-	Source      string                  `xml:"source,omitempty"`
-	Published   string                  `xml:"published,omitempty"`
-	Links       []feeds.AtomLink        `xml:"link"`
-	Summary     *feeds.AtomSummary      `xml:"summary,omitempty"`
-	Author      *feeds.AtomAuthor       `xml:"author,omitempty"`
+	XMLName    xml.Name           `xml:"entry"`
+	Xmlns      string             `xml:"xmlns,attr,omitempty"`
+	Title      string             `xml:"title"`
+	Updated    string             `xml:"updated"`
+	Id         string             `xml:"id"`
+	Categories []AtomCategory     `xml:"category"`
+	Content    *feeds.AtomContent `xml:"content,omitempty"`
+	Rights     string             `xml:"rights,omitempty"`
+	Source     string             `xml:"source,omitempty"`
+	Published  string             `xml:"published,omitempty"`
+	Links      []feeds.AtomLink   `xml:"link"`
+	Summary    *feeds.AtomSummary `xml:"summary,omitempty"`
+	Author     *feeds.AtomAuthor  `xml:"author,omitempty"`
 }
 
 type CustomAtomFeed struct {
-	XMLName     xml.Name           `xml:"feed"`
-	Xmlns       string             `xml:"xmlns,attr"`
-	Title       string             `xml:"title"`
-	Id          string             `xml:"id"`
-	Updated     string             `xml:"updated"`
-	Link        *feeds.AtomLink    `xml:"link,omitempty"`
-	Author      *feeds.AtomAuthor  `xml:"author,omitempty"`
-	Subtitle    string             `xml:"subtitle,omitempty"`
-	Rights      string             `xml:"rights,omitempty"`
-	Entries     []*CustomAtomEntry `xml:"entry"`
+	XMLName  xml.Name           `xml:"feed"`
+	Xmlns    string             `xml:"xmlns,attr"`
+	Title    string             `xml:"title"`
+	Id       string             `xml:"id"`
+	Updated  string             `xml:"updated"`
+	Link     *feeds.AtomLink    `xml:"link,omitempty"`
+	Author   *feeds.AtomAuthor  `xml:"author,omitempty"`
+	Subtitle string             `xml:"subtitle,omitempty"`
+	Rights   string             `xml:"rights,omitempty"`
+	Entries  []*CustomAtomEntry `xml:"entry"`
 }
 
 // convertToCustomAtom converts a standard Feed to a CustomAtomFeed with proper categories
 func convertToCustomAtom(feed *feeds.Feed, itemCategories map[string][]string) *CustomAtomFeed {
 	atom := &feeds.Atom{Feed: feed}
 	standardAtomFeed := atom.AtomFeed()
-	
+
 	customFeed := &CustomAtomFeed{
 		Xmlns:    "http://www.w3.org/2005/Atom",
 		Title:    standardAtomFeed.Title,
@@ -65,7 +65,7 @@ func convertToCustomAtom(feed *feeds.Feed, itemCategories map[string][]string) *
 		Subtitle: standardAtomFeed.Subtitle,
 		Rights:   standardAtomFeed.Rights,
 	}
-	
+
 	// Convert entries with categories
 	for _, entry := range standardAtomFeed.Entries {
 		customEntry := &CustomAtomEntry{
@@ -80,7 +80,7 @@ func convertToCustomAtom(feed *feeds.Feed, itemCategories map[string][]string) *
 			Summary:   entry.Summary,
 			Author:    entry.Author,
 		}
-		
+
 		// Add categories for this entry
 		if categories, exists := itemCategories[entry.Id]; exists {
 			for _, cat := range categories {
@@ -90,10 +90,10 @@ func convertToCustomAtom(feed *feeds.Feed, itemCategories map[string][]string) *
 				})
 			}
 		}
-		
+
 		customFeed.Entries = append(customFeed.Entries, customEntry)
 	}
-	
+
 	return customFeed
 }
 
@@ -103,13 +103,13 @@ func getOpenGraphWithFallback(db *sql.DB, fetcher *OpenGraphFetcher, url string)
 	if db == nil {
 		return nil
 	}
-	
+
 	// First check cache
 	cached, err := getOpenGraphData(db, url)
 	if err != nil {
 		slog.Warn("Error getting cached OpenGraph data", "error", err, "url", url)
 	}
-	
+
 	// Return cached data if available and successful
 	if cached != nil && cached.FetchSuccess {
 		return &OpenGraphData{
@@ -120,20 +120,20 @@ func getOpenGraphWithFallback(db *sql.DB, fetcher *OpenGraphFetcher, url string)
 			SiteName:    cached.SiteName,
 		}
 	}
-	
+
 	// Skip fetching if we have a recent failed attempt
 	if cached != nil && !cached.FetchSuccess {
 		slog.Debug("Skipping OpenGraph fetch due to recent failure", "url", url)
 		return nil
 	}
-	
+
 	// Fetch fresh data
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 	defer cancel()
-	
+
 	ogData, err := fetcher.FetchOpenGraph(ctx, url)
 	fetchSuccess := err == nil && ogData != nil
-	
+
 	if err != nil {
 		slog.Debug("Failed to fetch OpenGraph data", "error", err, "url", url)
 		// Cache the failure to avoid repeated attempts
@@ -144,18 +144,18 @@ func getOpenGraphWithFallback(db *sql.DB, fetcher *OpenGraphFetcher, url string)
 		cleanOpenGraphData(ogData)
 		slog.Debug("Successfully fetched OpenGraph data", "url", url, "title", ogData.Title)
 	}
-	
+
 	// Cache the result (success or failure)
 	if ogData != nil {
 		if err := cacheOpenGraphData(db, ogData, fetchSuccess); err != nil {
 			slog.Warn("Failed to cache OpenGraph data", "error", err, "url", url)
 		}
 	}
-	
+
 	if fetchSuccess {
 		return ogData
 	}
-	
+
 	return nil
 }
 
@@ -163,7 +163,7 @@ func getOpenGraphWithFallback(db *sql.DB, fetcher *OpenGraphFetcher, url string)
 func generateRSSFeed(db *sql.DB, items []HackerNewsItem, minPoints int) string {
 	slog.Debug("Generating RSS feed", "itemCount", len(items))
 	now := time.Now()
-	
+
 	feed := &feeds.Feed{
 		Title:       "Hacker News Top Stories",
 		Description: "High-quality Hacker News stories, updated regularly",
@@ -177,7 +177,7 @@ func generateRSSFeed(db *sql.DB, items []HackerNewsItem, minPoints int) string {
 	itemCategories := make(map[string][]string)
 
 	domainRegex := regexp.MustCompile(`^https?://([^/]+)`)
-	
+
 	// Initialize OpenGraph fetcher
 	ogFetcher := NewOpenGraphFetcher()
 	slog.Debug("Initialized OpenGraph fetcher")
@@ -193,10 +193,10 @@ func generateRSSFeed(db *sql.DB, items []HackerNewsItem, minPoints int) string {
 		categories := categorizeContent(item.Title, domain, item.Link)
 		pointCategory := categorizeByPoints(item.Points, minPoints)
 		categories = append(categories, pointCategory)
-		
+
 		// Calculate post age
 		postAge := calculatePostAge(item.CreatedAt)
-		
+
 		// Calculate engagement ratio
 		engagementRatio := float64(item.CommentCount) / float64(item.Points)
 		engagementText := ""
@@ -205,7 +205,7 @@ func generateRSSFeed(db *sql.DB, items []HackerNewsItem, minPoints int) string {
 		} else if engagementRatio > 0.3 {
 			engagementText = "💬 Good discussion"
 		}
-		
+
 		// Fetch OpenGraph data for the article
 		var ogPreview string
 		if item.Link != "" {
@@ -252,7 +252,7 @@ func generateRSSFeed(db *sql.DB, items []HackerNewsItem, minPoints int) string {
 			}
 			categoryTags += "</div>"
 		}
-		
+
 		description := fmt.Sprintf(`<div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; line-height: 1.5;">
 			<div style="margin-bottom: 12px; padding: 8px; background-color: #f6f6ef; border-left: 4px solid #ff6600;">
 				<strong style="color: #ff6600;">%d points</strong> • 
@@ -313,7 +313,7 @@ func generateRSSFeed(db *sql.DB, items []HackerNewsItem, minPoints int) string {
 
 	// Generate custom Atom feed with proper categories
 	customAtomFeed := convertToCustomAtom(feed, itemCategories)
-	
+
 	// Convert to XML
 	xmlData, err := xml.MarshalIndent(customAtomFeed, "", "  ")
 	if err != nil {
