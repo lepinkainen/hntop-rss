@@ -265,10 +265,10 @@ func TestCleanOpenGraphData_TrimAndTruncate(t *testing.T) {
 	}
 }
 
-func TestCleanOpenGraphData_TruncateLongFields(t *testing.T) {
-	longTitle := strings.Repeat("A", 250)       // Exceeds 200 char limit
-	longDescription := strings.Repeat("B", 600) // Exceeds 500 char limit
-	longSiteName := strings.Repeat("C", 150)    // Exceeds 100 char limit
+func TestCleanOpenGraphData_PreservesLongFields(t *testing.T) {
+	longTitle := strings.Repeat("A", 250)       // Long title
+	longDescription := strings.Repeat("B", 600) // Long description
+	longSiteName := strings.Repeat("C", 150)    // Long site name
 
 	ogData := &OpenGraphData{
 		URL:         "https://example.com/test",
@@ -280,25 +280,26 @@ func TestCleanOpenGraphData_TruncateLongFields(t *testing.T) {
 
 	cleanOpenGraphData(ogData)
 
-	if len(ogData.Title) != 200 {
-		t.Errorf("Expected title length 200, got %d", len(ogData.Title))
+	// Fields should preserve their original length (no truncation)
+	if len(ogData.Title) != 250 {
+		t.Errorf("Expected title length 250, got %d", len(ogData.Title))
 	}
-	if !strings.HasSuffix(ogData.Title, "...") {
-		t.Error("Expected truncated title to end with '...'")
-	}
-
-	if len(ogData.Description) != 500 {
-		t.Errorf("Expected description length 500, got %d", len(ogData.Description))
-	}
-	if !strings.HasSuffix(ogData.Description, "...") {
-		t.Error("Expected truncated description to end with '...'")
+	if ogData.Title != longTitle {
+		t.Error("Expected title to be preserved without truncation")
 	}
 
-	if len(ogData.SiteName) != 100 {
-		t.Errorf("Expected site name length 100, got %d", len(ogData.SiteName))
+	if len(ogData.Description) != 600 {
+		t.Errorf("Expected description length 600, got %d", len(ogData.Description))
 	}
-	if !strings.HasSuffix(ogData.SiteName, "...") {
-		t.Error("Expected truncated site name to end with '...'")
+	if ogData.Description != longDescription {
+		t.Error("Expected description to be preserved without truncation")
+	}
+
+	if len(ogData.SiteName) != 150 {
+		t.Errorf("Expected site name length 150, got %d", len(ogData.SiteName))
+	}
+	if ogData.SiteName != longSiteName {
+		t.Error("Expected site name to be preserved without truncation")
 	}
 }
 

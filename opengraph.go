@@ -200,10 +200,10 @@ func truncateString(s string, maxLen int) string {
 
 // cleanOpenGraphData cleans and validates OpenGraph data
 func cleanOpenGraphData(ogData *OpenGraphData) {
-	// Truncate fields to reasonable lengths
-	ogData.Title = truncateString(strings.TrimSpace(ogData.Title), 200)
-	ogData.Description = truncateString(strings.TrimSpace(ogData.Description), 500)
-	ogData.SiteName = truncateString(strings.TrimSpace(ogData.SiteName), 100)
+	// Clean up whitespace from fields
+	ogData.Title = strings.TrimSpace(ogData.Title)
+	ogData.Description = strings.TrimSpace(ogData.Description)
+	ogData.SiteName = strings.TrimSpace(ogData.SiteName)
 
 	// Validate image URL
 	if ogData.Image != "" {
