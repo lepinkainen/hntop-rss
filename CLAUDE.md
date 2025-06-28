@@ -13,7 +13,8 @@ This is a Go application that fetches Hacker News stories from the Algolia API a
 - Updates item statistics using concurrent API calls
 - Generates an Atom RSS feed with the top 30 stories
 - Includes OpenGraph metadata extraction and caching
-- Supports content categorization and filtering
+- Supports content categorization and filtering with proper Atom `<category>` elements
+- Enhanced visual tag spacing for better RSS reader compatibility
 - Uses pure Go SQLite driver for database operations
 
 ## Build and Development Commands
@@ -51,15 +52,27 @@ The application is modularized across multiple files:
 - `updateStoredItems()` - Upserts items to SQLite with conflict resolution
 - `updateItemStats()` - Updates item statistics with concurrent API calls
 - `getAllItems()` - Queries top items filtered by points threshold
-- `generateRSSFeed()` - Creates Atom XML feed with OpenGraph metadata
-- `categorizeContent()` - Categorizes content by domain and keywords
+- `generateRSSFeed()` - Creates Atom XML feed with OpenGraph metadata and proper categories
+- `categorizeContent()` - Categorizes content by domain and keywords with enhanced domain mapping
+- `formatDomainName()` - Converts domain names to readable format (e.g., "theverge" → "The Verge")
+- `convertToCustomAtom()` - Converts standard feeds to custom Atom format with multiple categories
 - `fetchOpenGraphData()` - Extracts and caches OpenGraph metadata
 
 ### Dependencies
 
-- `github.com/gorilla/feeds` - RSS/Atom feed generation
+- `github.com/gorilla/feeds` - RSS/Atom feed generation (extended with custom category support)
 - `modernc.org/sqlite` - Pure Go SQLite driver
-- Standard library packages for HTTP, JSON, HTML parsing, and concurrency
+- Standard library packages for HTTP, JSON, HTML parsing, XML, and concurrency
+
+### RSS/Atom Feed Features
+
+The application generates enhanced Atom feeds with:
+- **Proper Atom categories**: Each item includes standards-compliant `<category term="..." label="...">` elements
+- **Enhanced visual tags**: Improved CSS styling with better spacing for RSS reader compatibility
+- **Smart domain categorization**: Maps common domains to readable names (e.g., "theverge" → "The Verge")
+- **Multiple category types**: Domain-based, content-type, and points-based categories
+- **OpenGraph integration**: Rich previews with titles, descriptions, and images
+- **Custom Atom structures**: Extended gorilla/feeds with proper multi-category support
 
 ### Database Schema
 
