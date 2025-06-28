@@ -52,7 +52,7 @@ task build
 
 By default, the application fetches domain categorization mappings from a remote URL to convert raw domains (like "github.com") into readable category names (like "GitHub").
 
-**Default behavior:** Fetches from `https://raw.githubusercontent.com/lepinkainen/hntop-rss/refs/heads/main/configs/domains.json`
+**Default behavior:** Fetches from [this repository](https://raw.githubusercontent.com/lepinkainen/hntop-rss/refs/heads/main/configs/domains.json)
 
 **Configuration options:**
 
