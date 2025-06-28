@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"database/sql"
+	"encoding/xml"
 	"fmt"
 	"log/slog"
 	"os"
@@ -11,6 +12,90 @@ import (
 
 	"github.com/gorilla/feeds"
 )
+
+// Custom Atom structures to support multiple categories
+type AtomCategory struct {
+	XMLName xml.Name `xml:"category"`
+	Term    string   `xml:"term,attr"`
+	Label   string   `xml:"label,attr,omitempty"`
+	Scheme  string   `xml:"scheme,attr,omitempty"`
+}
+
+type CustomAtomEntry struct {
+	XMLName     xml.Name                `xml:"entry"`
+	Xmlns       string                  `xml:"xmlns,attr,omitempty"`
+	Title       string                  `xml:"title"`
+	Updated     string                  `xml:"updated"`
+	Id          string                  `xml:"id"`
+	Categories  []AtomCategory          `xml:"category"`
+	Content     *feeds.AtomContent      `xml:"content,omitempty"`
+	Rights      string                  `xml:"rights,omitempty"`
+	Source      string                  `xml:"source,omitempty"`
+	Published   string                  `xml:"published,omitempty"`
+	Links       []feeds.AtomLink        `xml:"link"`
+	Summary     *feeds.AtomSummary      `xml:"summary,omitempty"`
+	Author      *feeds.AtomAuthor       `xml:"author,omitempty"`
+}
+
+type CustomAtomFeed struct {
+	XMLName     xml.Name           `xml:"feed"`
+	Xmlns       string             `xml:"xmlns,attr"`
+	Title       string             `xml:"title"`
+	Id          string             `xml:"id"`
+	Updated     string             `xml:"updated"`
+	Link        *feeds.AtomLink    `xml:"link,omitempty"`
+	Author      *feeds.AtomAuthor  `xml:"author,omitempty"`
+	Subtitle    string             `xml:"subtitle,omitempty"`
+	Rights      string             `xml:"rights,omitempty"`
+	Entries     []*CustomAtomEntry `xml:"entry"`
+}
+
+// convertToCustomAtom converts a standard Feed to a CustomAtomFeed with proper categories
+func convertToCustomAtom(feed *feeds.Feed, itemCategories map[string][]string) *CustomAtomFeed {
+	atom := &feeds.Atom{Feed: feed}
+	standardAtomFeed := atom.AtomFeed()
+	
+	customFeed := &CustomAtomFeed{
+		Xmlns:    "http://www.w3.org/2005/Atom",
+		Title:    standardAtomFeed.Title,
+		Id:       standardAtomFeed.Id,
+		Updated:  standardAtomFeed.Updated,
+		Link:     standardAtomFeed.Link,
+		Author:   standardAtomFeed.Author,
+		Subtitle: standardAtomFeed.Subtitle,
+		Rights:   standardAtomFeed.Rights,
+	}
+	
+	// Convert entries with categories
+	for _, entry := range standardAtomFeed.Entries {
+		customEntry := &CustomAtomEntry{
+			Title:     entry.Title,
+			Updated:   entry.Updated,
+			Id:        entry.Id,
+			Content:   entry.Content,
+			Rights:    entry.Rights,
+			Source:    entry.Source,
+			Published: entry.Published,
+			Links:     entry.Links,
+			Summary:   entry.Summary,
+			Author:    entry.Author,
+		}
+		
+		// Add categories for this entry
+		if categories, exists := itemCategories[entry.Id]; exists {
+			for _, cat := range categories {
+				customEntry.Categories = append(customEntry.Categories, AtomCategory{
+					Term:  cat,
+					Label: cat,
+				})
+			}
+		}
+		
+		customFeed.Entries = append(customFeed.Entries, customEntry)
+	}
+	
+	return customFeed
+}
 
 // getOpenGraphWithFallback fetches OpenGraph data with caching and fallback
 func getOpenGraphWithFallback(db *sql.DB, fetcher *OpenGraphFetcher, url string) *OpenGraphData {
@@ -88,6 +173,9 @@ func generateRSSFeed(db *sql.DB, items []HackerNewsItem, minPoints int) string {
 		Updated:     now,
 	}
 
+	// Track categories for each item (using CommentsLink as the ID)
+	itemCategories := make(map[string][]string)
+
 	domainRegex := regexp.MustCompile(`^https?://([^/]+)`)
 	
 	// Initialize OpenGraph fetcher
@@ -154,9 +242,13 @@ func generateRSSFeed(db *sql.DB, items []HackerNewsItem, minPoints int) string {
 		// Enhanced HTML description with categories
 		categoryTags := ""
 		if len(categories) > 0 {
-			categoryTags = "<div style=\"margin-bottom: 8px;\">"
-			for _, cat := range categories {
-				categoryTags += fmt.Sprintf("<span style=\"display: inline-block; background: #e5e5e5; color: #666; padding: 2px 6px; border-radius: 12px; font-size: 12px; margin-right: 4px;\">%s</span>", cat)
+			categoryTags = "<div style=\"margin-bottom: 8px; line-height: 1.8;\">"
+			for i, cat := range categories {
+				// Add space between tags for better RSS reader compatibility
+				if i > 0 {
+					categoryTags += " "
+				}
+				categoryTags += fmt.Sprintf("<span style=\"display: inline-block; background: #e5e5e5; color: #666; padding: 3px 8px; border-radius: 12px; font-size: 12px; margin-right: 6px; margin-bottom: 2px; white-space: nowrap;\">%s</span>", cat)
 			}
 			categoryTags += "</div>"
 		}
@@ -213,14 +305,24 @@ func generateRSSFeed(db *sql.DB, items []HackerNewsItem, minPoints int) string {
 			Created:     item.CreatedAt,
 		}
 
+		// Store categories for this item (using the same ID as the rssItem)
+		itemCategories[item.CommentsLink] = categories
+
 		feed.Items = append(feed.Items, rssItem)
 	}
 
-	rss, err := feed.ToAtom()
+	// Generate custom Atom feed with proper categories
+	customAtomFeed := convertToCustomAtom(feed, itemCategories)
+	
+	// Convert to XML
+	xmlData, err := xml.MarshalIndent(customAtomFeed, "", "  ")
 	if err != nil {
 		slog.Error("Failed to generate RSS feed", "error", err)
 		os.Exit(1)
 	}
+
+	// Add XML header
+	rss := xml.Header + string(xmlData)
 
 	slog.Debug("RSS feed generated successfully", "feedSize", len(rss))
 	return rss
