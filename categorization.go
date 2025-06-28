@@ -30,7 +30,9 @@ func categorizeContent(title, domain, url string) []string {
 			parts := strings.Split(domain, ".")
 			if len(parts) > 1 {
 				mainDomain := parts[len(parts)-2]
-				categories = append(categories, strings.ToUpper(string(mainDomain[0]))+mainDomain[1:])
+				// Convert camelCase and concatenated words to proper spacing
+				formattedDomain := formatDomainName(mainDomain)
+				categories = append(categories, formattedDomain)
 			}
 		}
 	}
@@ -93,4 +95,44 @@ func calculatePostAge(createdAt time.Time) string {
 		weeks := int(diff.Hours() / (24 * 7))
 		return fmt.Sprintf("%d weeks ago", weeks)
 	}
+}
+
+// formatDomainName converts domain names to more readable format
+// Examples: "theverge" -> "The Verge", "arstechnica" -> "Ars Technica"
+func formatDomainName(domain string) string {
+	// Handle common domain patterns
+	domainMappings := map[string]string{
+		"theverge":     "The Verge",
+		"arstechnica":  "Ars Technica",
+		"techcrunch":   "TechCrunch",
+		"stackoverflow": "Stack Overflow",
+		"hbr":          "Harvard Business Review",
+		"wsj":          "Wall Street Journal",
+		"nytimes":      "New York Times",
+		"washingtonpost": "Washington Post",
+		"bloomberg":    "Bloomberg",
+		"reuters":      "Reuters",
+		"bbc":          "BBC",
+		"cnn":          "CNN",
+		"npr":          "NPR",
+		"wired":        "Wired",
+		"engadget":     "Engadget",
+		"venturebeat":  "VentureBeat",
+		"fastcompany":  "Fast Company",
+		"hackernoon":   "Hacker Noon",
+		"dev":          "Dev.to",
+		"substack":     "Substack",
+	}
+
+	// Check if we have a specific mapping
+	if mapped, exists := domainMappings[strings.ToLower(domain)]; exists {
+		return mapped
+	}
+
+	// For unknown domains, just capitalize first letter
+	if len(domain) > 0 {
+		return strings.ToUpper(string(domain[0])) + domain[1:]
+	}
+	
+	return domain
 }
