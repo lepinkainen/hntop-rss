@@ -160,7 +160,7 @@ func getOpenGraphWithFallback(db *sql.DB, fetcher *OpenGraphFetcher, url string)
 }
 
 // generateRSSFeed creates an Atom RSS feed from the provided items with OpenGraph data
-func generateRSSFeed(db *sql.DB, items []HackerNewsItem, minPoints int) string {
+func generateRSSFeed(db *sql.DB, items []HackerNewsItem, minPoints int, categoryMapper *CategoryMapper) string {
 	slog.Debug("Generating RSS feed", "itemCount", len(items))
 	now := time.Now()
 
@@ -190,7 +190,7 @@ func generateRSSFeed(db *sql.DB, items []HackerNewsItem, minPoints int) string {
 		}
 
 		// Generate categories
-		categories := categorizeContent(item.Title, domain, item.Link)
+		categories := categorizeContent(item.Title, domain, item.Link, categoryMapper)
 		pointCategory := categorizeByPoints(item.Points, minPoints)
 		categories = append(categories, pointCategory)
 

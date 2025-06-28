@@ -150,12 +150,12 @@ func getAllItems(db *sql.DB, limit int, minPoints int) []HackerNewsItem {
 // getOpenGraphData retrieves cached OpenGraph data for a URL
 func getOpenGraphData(db *sql.DB, url string) (*OpenGraphCache, error) {
 	slog.Debug("Getting cached OpenGraph data", "url", url)
-	
+
 	query := `
 		SELECT id, url, title, description, image, site_name, fetched_at, expires_at, fetch_success 
 		FROM opengraph_cache 
 		WHERE url = ? AND expires_at > ?`
-	
+
 	var cache OpenGraphCache
 	err := db.QueryRow(query, url, time.Now()).Scan(
 		&cache.ID,
@@ -168,16 +168,16 @@ func getOpenGraphData(db *sql.DB, url string) (*OpenGraphCache, error) {
 		&cache.ExpiresAt,
 		&cache.FetchSuccess,
 	)
-	
+
 	if err == sql.ErrNoRows {
 		slog.Debug("No cached OpenGraph data found", "url", url)
 		return nil, nil
 	}
-	
+
 	if err != nil {
 		return nil, fmt.Errorf("failed to query OpenGraph cache: %w", err)
 	}
-	
+
 	slog.Debug("Found cached OpenGraph data", "url", url, "title", cache.Title)
 	return &cache, nil
 }
@@ -185,7 +185,7 @@ func getOpenGraphData(db *sql.DB, url string) (*OpenGraphCache, error) {
 // cacheOpenGraphData stores OpenGraph data in the cache
 func cacheOpenGraphData(db *sql.DB, ogData *OpenGraphData, fetchSuccess bool) error {
 	slog.Debug("Caching OpenGraph data", "url", ogData.URL, "success", fetchSuccess)
-	
+
 	// Calculate expiry time: 7 days for successful fetches, 1 day for failures
 	var expiresAt time.Time
 	if fetchSuccess {
@@ -193,7 +193,7 @@ func cacheOpenGraphData(db *sql.DB, ogData *OpenGraphData, fetchSuccess bool) er
 	} else {
 		expiresAt = time.Now().Add(24 * time.Hour)
 	}
-	
+
 	query := `
 		INSERT INTO opengraph_cache (url, title, description, image, site_name, fetched_at, expires_at, fetch_success)
 		VALUES (?, ?, ?, ?, ?, ?, ?, ?)
@@ -205,7 +205,7 @@ func cacheOpenGraphData(db *sql.DB, ogData *OpenGraphData, fetchSuccess bool) er
 			fetched_at = excluded.fetched_at,
 			expires_at = excluded.expires_at,
 			fetch_success = excluded.fetch_success`
-	
+
 	_, err := db.Exec(query,
 		ogData.URL,
 		ogData.Title,
@@ -216,11 +216,11 @@ func cacheOpenGraphData(db *sql.DB, ogData *OpenGraphData, fetchSuccess bool) er
 		expiresAt,
 		fetchSuccess,
 	)
-	
+
 	if err != nil {
 		return fmt.Errorf("failed to cache OpenGraph data: %w", err)
 	}
-	
+
 	slog.Debug("Successfully cached OpenGraph data", "url", ogData.URL)
 	return nil
 }
@@ -228,16 +228,16 @@ func cacheOpenGraphData(db *sql.DB, ogData *OpenGraphData, fetchSuccess bool) er
 // cleanupExpiredOpenGraphCache removes expired OpenGraph cache entries
 func cleanupExpiredOpenGraphCache(db *sql.DB) error {
 	slog.Debug("Cleaning up expired OpenGraph cache entries")
-	
+
 	result, err := db.Exec("DELETE FROM opengraph_cache WHERE expires_at < ?", time.Now())
 	if err != nil {
 		return fmt.Errorf("failed to cleanup expired cache: %w", err)
 	}
-	
+
 	rowsAffected, _ := result.RowsAffected()
 	if rowsAffected > 0 {
 		slog.Debug("Cleaned up expired OpenGraph cache entries", "count", rowsAffected)
 	}
-	
+
 	return nil
 }

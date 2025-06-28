@@ -1,81 +1,132 @@
 package main
 
 import (
+	"strings"
 	"testing"
 	"time"
 )
 
+// buildExpectedCategories builds the expected categories for a given domain and title
+// based on the configuration file
+func buildExpectedCategories(domain, title, url string, categoryMapper *CategoryMapper) []string {
+	var expected []string
+
+	// Add raw domain if not empty
+	if domain != "" {
+		expected = append(expected, domain)
+	}
+
+	// Add configured category if exists
+	if domain != "" && categoryMapper != nil {
+		if category := categoryMapper.GetCategoryForDomain(domain); category != "" {
+			expected = append(expected, category)
+		}
+	}
+
+	// Add content type categories (these are not configurable)
+	titleLower := strings.ToLower(title)
+	switch {
+	case strings.HasPrefix(titleLower, "show hn:"):
+		expected = append(expected, "Show HN")
+	case strings.HasPrefix(titleLower, "ask hn:"):
+		expected = append(expected, "Ask HN")
+	case strings.Contains(titleLower, "pdf") || strings.HasSuffix(url, ".pdf"):
+		expected = append(expected, "PDF")
+	case strings.Contains(titleLower, "video"):
+		expected = append(expected, "Video")
+	case strings.Contains(titleLower, "book") || strings.Contains(titleLower, "ebook"):
+		expected = append(expected, "Book")
+	}
+
+	return expected
+}
+
 func TestCategorizeContent(t *testing.T) {
+	// Try to load config from the actual domains.json file
+	config, err := loadConfigFromFile("configs/domains.json")
+	var categoryMapper *CategoryMapper
+	if err != nil {
+		t.Logf("Could not load config from domains.json, testing with nil categoryMapper: %v", err)
+		categoryMapper = nil
+	} else {
+		categoryMapper = NewCategoryMapper(config)
+	}
+
 	testCases := []struct {
-		name     string
-		title    string
-		domain   string
-		url      string
-		expected []string
+		name   string
+		title  string
+		domain string
+		url    string
 	}{
 		{
-			name:     "GitHub repository",
-			title:    "Awesome Go Library",
-			domain:   "github.com",
-			url:      "https://github.com/user/repo",
-			expected: []string{"GitHub"},
+			name:   "GitHub repository",
+			title:  "Awesome Go Library",
+			domain: "github.com",
+			url:    "https://github.com/user/repo",
 		},
 		{
-			name:     "ArXiv paper",
-			title:    "Machine Learning Research",
-			domain:   "arxiv.org",
-			url:      "https://arxiv.org/abs/1234.5678",
-			expected: []string{"ArXiv"},
+			name:   "ArXiv paper",
+			title:  "Machine Learning Research",
+			domain: "arxiv.org",
+			url:    "https://arxiv.org/abs/1234.5678",
 		},
 		{
-			name:     "Show HN post",
-			title:    "Show HN: My new project",
-			domain:   "example.com",
-			url:      "https://example.com/project",
-			expected: []string{"Example", "Show HN"},
+			name:   "Show HN post",
+			title:  "Show HN: My new project",
+			domain: "example.com",
+			url:    "https://example.com/project",
 		},
 		{
-			name:     "Ask HN post",
-			title:    "Ask HN: How do you learn programming?",
-			domain:   "news.ycombinator.com",
-			url:      "https://news.ycombinator.com/item?id=123",
-			expected: []string{"Ycombinator", "Ask HN"},
+			name:   "Ask HN post",
+			title:  "Ask HN: How do you learn programming?",
+			domain: "news.ycombinator.com",
+			url:    "https://news.ycombinator.com/item?id=123",
 		},
 		{
-			name:     "PDF document",
-			title:    "Research Paper (PDF)",
-			domain:   "university.edu",
-			url:      "https://university.edu/paper.pdf",
-			expected: []string{"University", "PDF"},
+			name:   "PDF document",
+			title:  "Research Paper (PDF)",
+			domain: "university.edu",
+			url:    "https://university.edu/paper.pdf",
 		},
 		{
-			name:     "YouTube video",
-			title:    "Tech Tutorial",
-			domain:   "youtube.com",
-			url:      "https://youtube.com/watch?v=123",
-			expected: []string{"YouTube"},
+			name:   "YouTube video",
+			title:  "Tech Tutorial",
+			domain: "youtube.com",
+			url:    "https://youtube.com/watch?v=123",
 		},
 		{
-			name:     "Empty domain",
-			title:    "Some title",
-			domain:   "",
-			url:      "",
-			expected: []string{},
+			name:   "The Verge article",
+			title:  "Tech News Article",
+			domain: "theverge.com",
+			url:    "https://theverge.com/tech-news",
+		},
+		{
+			name:   "Unknown domain",
+			title:  "Some Article",
+			domain: "unknown-site.com",
+			url:    "https://unknown-site.com/article",
+		},
+		{
+			name:   "Empty domain",
+			title:  "Some title",
+			domain: "",
+			url:    "",
 		},
 	}
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			result := categorizeContent(tc.title, tc.domain, tc.url)
-			
-			if len(result) != len(tc.expected) {
-				t.Errorf("Expected %d categories, got %d: %v", len(tc.expected), len(result), result)
+			result := categorizeContent(tc.title, tc.domain, tc.url, categoryMapper)
+			expected := buildExpectedCategories(tc.domain, tc.title, tc.url, categoryMapper)
+
+			if len(result) != len(expected) {
+				t.Errorf("Expected %d categories, got %d: expected=%v, actual=%v", len(expected), len(result), expected, result)
 				return
 			}
-			
-			for i, expected := range tc.expected {
-				if result[i] != expected {
-					t.Errorf("Expected category %d to be '%s', got '%s'", i, expected, result[i])
+
+			for i, expectedCat := range expected {
+				if result[i] != expectedCat {
+					t.Errorf("Expected category %d to be '%s', got '%s'", i, expectedCat, result[i])
 				}
 			}
 		})
@@ -113,7 +164,7 @@ func TestCategorizeByPoints(t *testing.T) {
 
 func TestCalculatePostAge(t *testing.T) {
 	now := time.Now()
-	
+
 	testCases := []struct {
 		name     string
 		time     time.Time
@@ -132,57 +183,6 @@ func TestCalculatePostAge(t *testing.T) {
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
 			result := calculatePostAge(tc.time)
-			if result != tc.expected {
-				t.Errorf("Expected '%s', got '%s'", tc.expected, result)
-			}
-		})
-	}
-}
-
-func TestFormatDomainName(t *testing.T) {
-	testCases := []struct {
-		name     string
-		input    string
-		expected string
-	}{
-		// Test mapped domains
-		{"the verge", "theverge", "The Verge"},
-		{"ars technica", "arstechnica", "Ars Technica"},
-		{"techcrunch", "techcrunch", "TechCrunch"},
-		{"stack overflow", "stackoverflow", "Stack Overflow"},
-		{"harvard business review", "hbr", "Harvard Business Review"},
-		{"wall street journal", "wsj", "Wall Street Journal"},
-		{"new york times", "nytimes", "New York Times"},
-		{"washington post", "washingtonpost", "Washington Post"},
-		{"bloomberg", "bloomberg", "Bloomberg"},
-		{"reuters", "reuters", "Reuters"},
-		{"bbc", "bbc", "BBC"},
-		{"cnn", "cnn", "CNN"},
-		{"npr", "npr", "NPR"},
-		{"wired", "wired", "Wired"},
-		{"engadget", "engadget", "Engadget"},
-		{"venturebeat", "venturebeat", "VentureBeat"},
-		{"fast company", "fastcompany", "Fast Company"},
-		{"hacker noon", "hackernoon", "Hacker Noon"},
-		{"dev.to", "dev", "Dev.to"},
-		{"substack", "substack", "Substack"},
-		
-		// Test case insensitive mapping
-		{"uppercase mapped", "THEVERGE", "The Verge"},
-		{"mixed case mapped", "TechCrunch", "TechCrunch"},
-		
-		// Test unknown domains (capitalize first letter)
-		{"unknown simple", "example", "Example"},
-		{"unknown complex", "somewebsite", "Somewebsite"},
-		{"single character", "a", "A"},
-		
-		// Test edge case - empty string
-		{"empty string", "", ""},
-	}
-
-	for _, tc := range testCases {
-		t.Run(tc.name, func(t *testing.T) {
-			result := formatDomainName(tc.input)
 			if result != tc.expected {
 				t.Errorf("Expected '%s', got '%s'", tc.expected, result)
 			}

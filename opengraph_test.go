@@ -266,9 +266,9 @@ func TestCleanOpenGraphData_TrimAndTruncate(t *testing.T) {
 }
 
 func TestCleanOpenGraphData_TruncateLongFields(t *testing.T) {
-	longTitle := strings.Repeat("A", 250)          // Exceeds 200 char limit
-	longDescription := strings.Repeat("B", 600)   // Exceeds 500 char limit
-	longSiteName := strings.Repeat("C", 150)      // Exceeds 100 char limit
+	longTitle := strings.Repeat("A", 250)       // Exceeds 200 char limit
+	longDescription := strings.Repeat("B", 600) // Exceeds 500 char limit
+	longSiteName := strings.Repeat("C", 150)    // Exceeds 100 char limit
 
 	ogData := &OpenGraphData{
 		URL:         "https://example.com/test",

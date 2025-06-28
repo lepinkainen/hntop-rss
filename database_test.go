@@ -324,7 +324,7 @@ func TestGetOpenGraphData_Found(t *testing.T) {
 	// Insert test OpenGraph data that hasn't expired
 	testURL := "https://example.com/test"
 	futureTime := time.Now().Add(24 * time.Hour)
-	
+
 	_, err := db.Exec(`
 		INSERT INTO opengraph_cache (url, title, description, image, site_name, expires_at, fetch_success)
 		VALUES (?, ?, ?, ?, ?, ?, ?)`,
@@ -370,7 +370,7 @@ func TestGetOpenGraphData_Expired(t *testing.T) {
 	// Insert expired OpenGraph data
 	testURL := "https://example.com/expired"
 	pastTime := time.Now().Add(-24 * time.Hour)
-	
+
 	_, err := db.Exec(`
 		INSERT INTO opengraph_cache (url, title, description, expires_at, fetch_success)
 		VALUES (?, ?, ?, ?, ?)`,
@@ -421,7 +421,7 @@ func TestCacheOpenGraphData_NewEntry(t *testing.T) {
 	// Verify the data
 	var title, description, image, siteName string
 	var fetchSuccess bool
-	err = db.QueryRow("SELECT title, description, image, site_name, fetch_success FROM opengraph_cache WHERE url = ?", 
+	err = db.QueryRow("SELECT title, description, image, site_name, fetch_success FROM opengraph_cache WHERE url = ?",
 		ogData.URL).Scan(&title, &description, &image, &siteName, &fetchSuccess)
 	if err != nil {
 		t.Fatalf("Error retrieving cached data: %v", err)
@@ -489,7 +489,7 @@ func TestCacheOpenGraphData_UpdateExisting(t *testing.T) {
 	// Verify the data was updated
 	var title string
 	var fetchSuccess bool
-	err = db.QueryRow("SELECT title, fetch_success FROM opengraph_cache WHERE url = ?", 
+	err = db.QueryRow("SELECT title, fetch_success FROM opengraph_cache WHERE url = ?",
 		testURL).Scan(&title, &fetchSuccess)
 	if err != nil {
 		t.Fatalf("Error retrieving updated data: %v", err)
@@ -576,8 +576,13 @@ func TestCleanupExpiredOpenGraphCache(t *testing.T) {
 	}
 	for i, expectedURL := range expectedURLs {
 		if i >= len(remainingURLs) || remainingURLs[i] != expectedURL {
-			t.Errorf("Expected URL '%s' at position %d, got '%s'", expectedURL, i, 
-				func() string { if i < len(remainingURLs) { return remainingURLs[i] }; return "none" }())
+			t.Errorf("Expected URL '%s' at position %d, got '%s'", expectedURL, i,
+				func() string {
+					if i < len(remainingURLs) {
+						return remainingURLs[i]
+					}
+					return "none"
+				}())
 		}
 	}
 }

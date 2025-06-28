@@ -8,7 +8,7 @@ import (
 )
 
 // updateAndSaveFeed orchestrates the entire process of fetching, updating, and generating the RSS feed
-func updateAndSaveFeed(outDir string, minPoints int) {
+func updateAndSaveFeed(outDir string, minPoints int, categoryMapper *CategoryMapper) {
 	db := initDB()
 	defer func() { _ = db.Close() }()
 
@@ -41,7 +41,7 @@ func updateAndSaveFeed(outDir string, minPoints int) {
 
 	// Generate and save the feed
 	filename := filepath.Join(outDir, "hntop30.xml")
-	rss := generateRSSFeed(db, allItems, minPoints)
+	rss := generateRSSFeed(db, allItems, minPoints, categoryMapper)
 	err = os.WriteFile(filename, []byte(rss), 0644)
 	if err != nil {
 		slog.Error("Error writing RSS feed to file", "error", err)
@@ -56,6 +56,8 @@ func main() {
 	outDir := flag.String("outdir", ".", "directory where the RSS feed file will be saved")
 	debug := flag.Bool("debug", false, "enable debug logging")
 	minPoints := flag.Int("min-points", 50, "minimum points threshold for items to include in RSS feed")
+	configPath := flag.String("config", "", "path to local configuration file (optional)")
+	configURL := flag.String("config-url", "", "URL to remote configuration file (defaults to GitHub)")
 	flag.Parse()
 
 	// Configure log level based on debug flag
@@ -68,6 +70,9 @@ func main() {
 		Level: logLevel,
 	})))
 
+	// Load configuration
+	categoryMapper := LoadConfig(*configPath, *configURL)
+
 	slog.Debug("Starting application", "outDir", *outDir, "debugMode", *debug, "minPoints", *minPoints)
-	updateAndSaveFeed(*outDir, *minPoints)
+	updateAndSaveFeed(*outDir, *minPoints, categoryMapper)
 }

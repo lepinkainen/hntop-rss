@@ -19,10 +19,10 @@ func TestUpdateAndSaveFeed_Integration(t *testing.T) {
 	// This test would require mocking the HTTP calls or using a test database
 	// For now, we'll test that the function doesn't panic with valid parameters
 	t.Skip("Integration test requires API mocking or test database setup")
-	
+
 	// Future implementation:
 	// updateAndSaveFeed(tempDir, 50)
-	
+
 	// Verify the RSS file was created
 	// rssFile := filepath.Join(tempDir, "hntop30.xml")
 	// if _, err := os.Stat(rssFile); os.IsNotExist(err) {
@@ -34,7 +34,7 @@ func TestMain_FlagParsing(t *testing.T) {
 	// Test that the main function can be called without panicking
 	// This is more of a smoke test
 	t.Skip("Main function test requires refactoring to be testable")
-	
+
 	// Future implementation would test:
 	// - Flag parsing
 	// - Log level configuration
@@ -51,8 +51,8 @@ func TestRSSFileGeneration(t *testing.T) {
 
 	// Test RSS file creation with empty data
 	filename := filepath.Join(tempDir, "test.xml")
-	rssContent := generateRSSFeed(nil, []HackerNewsItem{}, 50)
-	
+	rssContent := generateRSSFeed(nil, []HackerNewsItem{}, 50, nil)
+
 	err = os.WriteFile(filename, []byte(rssContent), 0644)
 	if err != nil {
 		t.Fatalf("Failed to write RSS file: %v", err)
@@ -63,7 +63,7 @@ func TestRSSFileGeneration(t *testing.T) {
 	if err != nil {
 		t.Fatalf("RSS file was not created: %v", err)
 	}
-	
+
 	if info.Size() == 0 {
 		t.Error("RSS file is empty")
 	}
