@@ -9,7 +9,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 This is a Go application that fetches Hacker News stories from the Algolia API and generates an RSS feed from high-scoring items. The application:
 
 - Fetches items from the Hacker News Algolia API
-- Stores items in a SQLite database (hackernews.db) 
+- Stores items in a SQLite database (hackernews.db)
 - Updates item statistics using concurrent API calls
 - Generates an Atom RSS feed with the top 30 stories
 - Includes OpenGraph metadata extraction and caching
@@ -41,7 +41,7 @@ The application is modularized across multiple files:
 - **main.go** - Main entry point and orchestration logic
 - **api.go** - Hacker News API integration and item fetching
 - **database.go** - SQLite database operations and schema management
-- **rss.go** - RSS/Atom feed generation
+- **feed.go** - RSS/Atom feed generation
 - **opengraph.go** - OpenGraph metadata extraction and caching
 - **categorization.go** - Content categorization and filtering logic
 - **types.go** - Data structures and type definitions
@@ -67,6 +67,7 @@ The application is modularized across multiple files:
 ### RSS/Atom Feed Features
 
 The application generates enhanced Atom feeds with:
+
 - **Proper Atom categories**: Each item includes standards-compliant `<category term="..." label="...">` elements
 - **Enhanced visual tags**: Improved CSS styling with better spacing for RSS reader compatibility
 - **Smart domain categorization**: Maps common domains to readable names (e.g., "theverge" → "The Verge")
@@ -77,6 +78,7 @@ The application generates enhanced Atom feeds with:
 ### Database Schema
 
 The SQLite database includes:
+
 - `items` table - Hacker News item data with points, comments, metadata
 - `opengraph_cache` table - Cached OpenGraph metadata with expiration
 - Uses UPSERT operations for conflict resolution
@@ -95,4 +97,3 @@ The built binary accepts command-line flags:
 - `-minpoints` - Minimum points threshold for items (default: 50)
 
 The generated RSS feed is saved as `hntop30.xml` in the specified directory.
-

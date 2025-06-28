@@ -22,6 +22,7 @@ tasks:
     deps:
       - test
       - lint
+      - validate-config
       - clean
     cmds:
       - mkdir -p {{.BUILDDIR}}
@@ -40,6 +41,7 @@ tasks:
     deps:
       - test
       - lint
+      - validate-config
       - clean
     cmds:
       - mkdir -p {{.BUILDDIR}}
@@ -73,6 +75,20 @@ tasks:
       - ./**/*.go
     silent: true
 
+  validate-config:
+    desc: Validate configuration files
+    cmds:
+      - |
+        echo "🔍 Validating configs/domains.json..."
+        if ! python3 -m json.tool configs/domains.json > /dev/null 2>&1; then
+          echo "❌ configs/domains.json is not valid JSON"
+          exit 1
+        fi
+        echo "✅ configs/domains.json is valid"
+    sources:
+      - configs/domains.json
+    silent: true
+
   clean:
     desc: Clean build artifacts
     cmds:
@@ -83,6 +99,7 @@ tasks:
     deps:
       - test-ci
       - lint
+      - validate-config
       - clean
     cmds:
       - mkdir -p {{.BUILDDIR}}
