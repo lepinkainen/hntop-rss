@@ -28,15 +28,20 @@ tasks:
       - mkdir -p {{.BUILDDIR}}
       - >
         go build 
-        -ldflags="-X main.Version={{.GIT_COMMIT}} -w -s" 
+        -ldflags="-X main.Version={{.VERSION}} -w -s" 
         -o {{.BINARY}}
     generates:
       - "{{.BINARY}}"
     vars:
-      GIT_COMMIT:
-        sh: git rev-parse --short HEAD
+      VERSION:
+        sh: |
+          if [ -n "${VERSION}" ]; then
+            echo "${VERSION}"
+          else
+            echo "dev-$(git rev-parse --short HEAD)"
+          fi
 
-  build-linux:
+  build-linux-amd64:
     desc: Cross-compile the Go application for Linux AMD64
     deps:
       - test
@@ -47,13 +52,98 @@ tasks:
       - mkdir -p {{.BUILDDIR}}
       - >
         GOOS=linux GOARCH=amd64 go build 
-        -ldflags="-X main.Version={{.GIT_COMMIT}} -w -s" 
+        -ldflags="-X main.Version={{.VERSION}} -w -s" 
         -o {{.BUILDDIR}}/{{.FUNCNAME}}-linux-amd64
     generates:
       - "{{.BUILDDIR}}/{{.FUNCNAME}}-linux-amd64"
     vars:
-      GIT_COMMIT:
-        sh: git rev-parse --short HEAD
+      VERSION:
+        sh: |
+          if [ -n "${VERSION}" ]; then
+            echo "${VERSION}"
+          else
+            echo "dev-$(git rev-parse --short HEAD)"
+          fi
+
+  build-linux:
+    desc: Alias for build-linux-amd64
+    cmds:
+      - task: build-linux-amd64
+
+  build-darwin-amd64:
+    desc: Cross-compile the Go application for macOS Intel
+    deps:
+      - clean
+    cmds:
+      - mkdir -p {{.BUILDDIR}}
+      - >
+        GOOS=darwin GOARCH=amd64 go build 
+        -ldflags="-X main.Version={{.VERSION}} -w -s" 
+        -o {{.BUILDDIR}}/{{.FUNCNAME}}-darwin-amd64
+    generates:
+      - "{{.BUILDDIR}}/{{.FUNCNAME}}-darwin-amd64"
+    vars:
+      VERSION:
+        sh: |
+          if [ -n "${VERSION}" ]; then
+            echo "${VERSION}"
+          else
+            echo "dev-$(git rev-parse --short HEAD)"
+          fi
+
+  build-darwin-arm64:
+    desc: Cross-compile the Go application for macOS Apple Silicon
+    deps:
+      - clean
+    cmds:
+      - mkdir -p {{.BUILDDIR}}
+      - >
+        GOOS=darwin GOARCH=arm64 go build 
+        -ldflags="-X main.Version={{.VERSION}} -w -s" 
+        -o {{.BUILDDIR}}/{{.FUNCNAME}}-darwin-arm64
+    generates:
+      - "{{.BUILDDIR}}/{{.FUNCNAME}}-darwin-arm64"
+    vars:
+      VERSION:
+        sh: |
+          if [ -n "${VERSION}" ]; then
+            echo "${VERSION}"
+          else
+            echo "dev-$(git rev-parse --short HEAD)"
+          fi
+
+  build-windows:
+    desc: Cross-compile the Go application for Windows AMD64
+    deps:
+      - clean
+    cmds:
+      - mkdir -p {{.BUILDDIR}}
+      - >
+        GOOS=windows GOARCH=amd64 go build 
+        -ldflags="-X main.Version={{.VERSION}} -w -s" 
+        -o {{.BUILDDIR}}/{{.FUNCNAME}}-windows-amd64.exe
+    generates:
+      - "{{.BUILDDIR}}/{{.FUNCNAME}}-windows-amd64.exe"
+    vars:
+      VERSION:
+        sh: |
+          if [ -n "${VERSION}" ]; then
+            echo "${VERSION}"
+          else
+            echo "dev-$(git rev-parse --short HEAD)"
+          fi
+
+  build-all-platforms:
+    desc: Build for all supported platforms
+    deps:
+      - test
+      - lint
+      - validate-config
+    cmds:
+      - task: build-linux-amd64
+      - task: build-darwin-amd64
+      - task: build-darwin-arm64
+      - task: build-windows
 
   test:
     desc: Run Go tests with coverage
@@ -102,13 +192,18 @@ tasks:
       - mkdir -p {{.BUILDDIR}}
       - >
         go build 
-        -ldflags="-X main.Version={{.GIT_COMMIT}} -w -s" 
+        -ldflags="-X main.Version={{.VERSION}} -w -s" 
         -o {{.BINARY}}
     generates:
       - "{{.BINARY}}"
     vars:
-      GIT_COMMIT:
-        sh: git rev-parse --short HEAD
+      VERSION:
+        sh: |
+          if [ -n "${VERSION}" ]; then
+            echo "${VERSION}"
+          else
+            echo "dev-$(git rev-parse --short HEAD)"
+          fi
 
   test-ci:
     desc: Run Go tests for CI with coverage

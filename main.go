@@ -7,6 +7,8 @@ import (
 	"path/filepath"
 )
 
+var Version string
+
 // updateAndSaveFeed orchestrates the entire process of fetching, updating, and generating the RSS feed
 func updateAndSaveFeed(outDir string, minPoints int, categoryMapper *CategoryMapper) {
 	db := initDB()
