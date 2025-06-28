@@ -16,6 +16,8 @@ This is a Go application that fetches Hacker News stories from the Algolia API a
 - Supports content categorization and filtering with proper Atom `<category>` elements
 - Enhanced visual tag spacing for better RSS reader compatibility
 - Uses pure Go SQLite driver for database operations
+- Features a flexible configuration system supporting local JSON files and remote config URLs
+- Includes comprehensive test coverage across all major components
 
 ## Build and Development Commands
 
@@ -29,8 +31,19 @@ This project uses [Task](https://taskfile.dev/) for build automation. All comman
 - `task build-ci` - Build for CI environments
 - `task test-ci` - Run tests for CI
 - `task upgrade-deps` - Upgrade all Go dependencies
+- `task validate-config` - Validate JSON configuration files
 
 **Required**: Always run `task build` before finishing any task to ensure the project builds successfully.
+
+### Testing
+
+The project includes comprehensive test coverage with dedicated test files for each major component. Run tests with:
+
+```bash
+task test
+```
+
+This generates coverage reports and validates that all components work correctly. Test coverage is tracked in `coverage.out`.
 
 ## Architecture
 
@@ -44,7 +57,19 @@ The application is modularized across multiple files:
 - **feed.go** - RSS/Atom feed generation
 - **opengraph.go** - OpenGraph metadata extraction and caching
 - **categorization.go** - Content categorization and filtering logic
+- **config.go** - Configuration management with support for local and remote JSON configs
 - **types.go** - Data structures and type definitions
+
+### Test Files
+
+The project includes comprehensive test coverage:
+
+- **api_test.go** - Tests for API functionality
+- **categorization_test.go** - Tests for categorization logic
+- **database_test.go** - Tests for database operations
+- **feed_test.go** - Tests for RSS feed generation
+- **main_test.go** - Tests for main application logic
+- **opengraph_test.go** - Tests for OpenGraph functionality
 
 ### Key Functions
 
@@ -60,9 +85,21 @@ The application is modularized across multiple files:
 
 ### Dependencies
 
-- `github.com/gorilla/feeds` - RSS/Atom feed generation (extended with custom category support)
-- `modernc.org/sqlite` - Pure Go SQLite driver
+The project (module `github.com/lepinkainen/hntop-rss`) uses:
+
+- `github.com/gorilla/feeds` v1.2.0 - RSS/Atom feed generation (extended with custom category support)
+- `modernc.org/sqlite` v1.38.0 - Pure Go SQLite driver
 - Standard library packages for HTTP, JSON, HTML parsing, XML, and concurrency
+
+### Configuration
+
+The application supports flexible configuration through:
+
+- **Local JSON files**: Use `-config path/to/config.json` to specify local domain mapping configuration
+- **Remote configuration**: Use `-config-url https://example.com/config.json` to fetch configuration from URLs
+- **Default configuration**: Built-in domain mappings in `configs/domains.json`
+
+The configuration system allows dynamic categorization of content based on domain mappings and can be updated without recompiling the application.
 
 ### RSS/Atom Feed Features
 
@@ -89,11 +126,13 @@ The SQLite database includes:
 The built binary accepts command-line flags:
 
 ```bash
-./build/hntop-rss -outdir /path/to/output -debug -minpoints 50
+./build/hntop-rss -outdir /path/to/output -debug -min-points 50 -config configs/domains.json
 ```
 
 - `-outdir` - Directory where RSS feed should be saved (default: current directory)
 - `-debug` - Enable debug logging
-- `-minpoints` - Minimum points threshold for items (default: 50)
+- `-min-points` - Minimum points threshold for items (default: 50)
+- `-config` - Path to local JSON configuration file for domain mappings
+- `-config-url` - URL to remote JSON configuration file for domain mappings
 
 The generated RSS feed is saved as `hntop30.xml` in the specified directory.
