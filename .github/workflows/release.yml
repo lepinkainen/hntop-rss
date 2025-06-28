@@ -123,7 +123,8 @@ jobs:
 
       - name: Organize artifacts
         run: |
-          find build/ -name "hntop-rss-*" -exec mv {} build/ \;
+          # Move artifacts from subdirectories to build/ root
+          find build/ -type f -name "hntop-rss-*" -exec mv {} build/ \;
           ls -la build/
 
       - name: Create Release
