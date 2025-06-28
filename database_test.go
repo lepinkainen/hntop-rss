@@ -14,8 +14,8 @@ func setupTestDB() *sql.DB {
 		panic(err)
 	}
 
-	// Create table schema
-	createTable := `
+	// Create items table schema
+	createItemsTable := `
 	CREATE TABLE IF NOT EXISTS items (
 		id INTEGER PRIMARY KEY AUTOINCREMENT,
 		item_hn_id TEXT NOT NULL UNIQUE,
@@ -29,9 +29,39 @@ func setupTestDB() *sql.DB {
 		updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 	)`
 
-	_, err = db.Exec(createTable)
+	_, err = db.Exec(createItemsTable)
 	if err != nil {
 		panic(err)
+	}
+
+	// Create OpenGraph cache table schema
+	createOGCacheTable := `
+	CREATE TABLE IF NOT EXISTS opengraph_cache (
+		id INTEGER PRIMARY KEY AUTOINCREMENT,
+		url TEXT NOT NULL UNIQUE,
+		title TEXT,
+		description TEXT,
+		image TEXT,
+		site_name TEXT,
+		fetched_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+		expires_at TIMESTAMP,
+		fetch_success BOOLEAN DEFAULT TRUE
+	)`
+	_, err = db.Exec(createOGCacheTable)
+	if err != nil {
+		panic(err)
+	}
+
+	// Create indexes for opengraph_cache table
+	createOGIndexes := []string{
+		"CREATE INDEX IF NOT EXISTS idx_opengraph_url ON opengraph_cache(url)",
+		"CREATE INDEX IF NOT EXISTS idx_opengraph_expires ON opengraph_cache(expires_at)",
+	}
+	for _, indexSQL := range createOGIndexes {
+		_, err = db.Exec(indexSQL)
+		if err != nil {
+			panic(err)
+		}
 	}
 
 	return db
@@ -270,5 +300,284 @@ func TestGetAllItems_OrderByCreatedAt(t *testing.T) {
 	}
 	if retrievedItems[1].Title != "Older Article" {
 		t.Errorf("Expected 'Older Article' second, got '%s'", retrievedItems[1].Title)
+	}
+}
+
+func TestGetOpenGraphData_NotFound(t *testing.T) {
+	db := setupTestDB()
+	defer func() { _ = db.Close() }()
+
+	// Try to get non-existent OpenGraph data
+	cache, err := getOpenGraphData(db, "https://example.com/nonexistent")
+	if err != nil {
+		t.Fatalf("Expected no error for non-existent URL, got: %v", err)
+	}
+	if cache != nil {
+		t.Error("Expected nil cache for non-existent URL")
+	}
+}
+
+func TestGetOpenGraphData_Found(t *testing.T) {
+	db := setupTestDB()
+	defer func() { _ = db.Close() }()
+
+	// Insert test OpenGraph data that hasn't expired
+	testURL := "https://example.com/test"
+	futureTime := time.Now().Add(24 * time.Hour)
+	
+	_, err := db.Exec(`
+		INSERT INTO opengraph_cache (url, title, description, image, site_name, expires_at, fetch_success)
+		VALUES (?, ?, ?, ?, ?, ?, ?)`,
+		testURL, "Test Title", "Test Description", "https://example.com/image.jpg", "Example Site", futureTime, true)
+	if err != nil {
+		t.Fatalf("Failed to insert test data: %v", err)
+	}
+
+	// Retrieve the data
+	cache, err := getOpenGraphData(db, testURL)
+	if err != nil {
+		t.Fatalf("Error retrieving OpenGraph data: %v", err)
+	}
+	if cache == nil {
+		t.Fatal("Expected cache data, got nil")
+	}
+
+	// Verify the data
+	if cache.URL != testURL {
+		t.Errorf("Expected URL '%s', got '%s'", testURL, cache.URL)
+	}
+	if cache.Title != "Test Title" {
+		t.Errorf("Expected title 'Test Title', got '%s'", cache.Title)
+	}
+	if cache.Description != "Test Description" {
+		t.Errorf("Expected description 'Test Description', got '%s'", cache.Description)
+	}
+	if cache.Image != "https://example.com/image.jpg" {
+		t.Errorf("Expected image URL 'https://example.com/image.jpg', got '%s'", cache.Image)
+	}
+	if cache.SiteName != "Example Site" {
+		t.Errorf("Expected site name 'Example Site', got '%s'", cache.SiteName)
+	}
+	if !cache.FetchSuccess {
+		t.Error("Expected fetch_success to be true")
+	}
+}
+
+func TestGetOpenGraphData_Expired(t *testing.T) {
+	db := setupTestDB()
+	defer func() { _ = db.Close() }()
+
+	// Insert expired OpenGraph data
+	testURL := "https://example.com/expired"
+	pastTime := time.Now().Add(-24 * time.Hour)
+	
+	_, err := db.Exec(`
+		INSERT INTO opengraph_cache (url, title, description, expires_at, fetch_success)
+		VALUES (?, ?, ?, ?, ?)`,
+		testURL, "Expired Title", "Expired Description", pastTime, true)
+	if err != nil {
+		t.Fatalf("Failed to insert test data: %v", err)
+	}
+
+	// Try to retrieve expired data
+	cache, err := getOpenGraphData(db, testURL)
+	if err != nil {
+		t.Fatalf("Expected no error for expired data, got: %v", err)
+	}
+	if cache != nil {
+		t.Error("Expected nil cache for expired URL")
+	}
+}
+
+func TestCacheOpenGraphData_NewEntry(t *testing.T) {
+	db := setupTestDB()
+	defer func() { _ = db.Close() }()
+
+	// Create test OpenGraph data
+	ogData := &OpenGraphData{
+		URL:         "https://example.com/new",
+		Title:       "New Title",
+		Description: "New Description",
+		Image:       "https://example.com/new.jpg",
+		SiteName:    "New Site",
+	}
+
+	// Cache the data
+	err := cacheOpenGraphData(db, ogData, true)
+	if err != nil {
+		t.Fatalf("Error caching OpenGraph data: %v", err)
+	}
+
+	// Verify it was stored
+	var count int
+	err = db.QueryRow("SELECT COUNT(*) FROM opengraph_cache WHERE url = ?", ogData.URL).Scan(&count)
+	if err != nil {
+		t.Fatalf("Error counting cached entries: %v", err)
+	}
+	if count != 1 {
+		t.Errorf("Expected 1 cached entry, got %d", count)
+	}
+
+	// Verify the data
+	var title, description, image, siteName string
+	var fetchSuccess bool
+	err = db.QueryRow("SELECT title, description, image, site_name, fetch_success FROM opengraph_cache WHERE url = ?", 
+		ogData.URL).Scan(&title, &description, &image, &siteName, &fetchSuccess)
+	if err != nil {
+		t.Fatalf("Error retrieving cached data: %v", err)
+	}
+
+	if title != ogData.Title {
+		t.Errorf("Expected title '%s', got '%s'", ogData.Title, title)
+	}
+	if description != ogData.Description {
+		t.Errorf("Expected description '%s', got '%s'", ogData.Description, description)
+	}
+	if image != ogData.Image {
+		t.Errorf("Expected image '%s', got '%s'", ogData.Image, image)
+	}
+	if siteName != ogData.SiteName {
+		t.Errorf("Expected site name '%s', got '%s'", ogData.SiteName, siteName)
+	}
+	if !fetchSuccess {
+		t.Error("Expected fetch_success to be true")
+	}
+}
+
+func TestCacheOpenGraphData_UpdateExisting(t *testing.T) {
+	db := setupTestDB()
+	defer func() { _ = db.Close() }()
+
+	testURL := "https://example.com/update"
+
+	// Insert initial data
+	initialData := &OpenGraphData{
+		URL:         testURL,
+		Title:       "Initial Title",
+		Description: "Initial Description",
+		Image:       "https://example.com/initial.jpg",
+		SiteName:    "Initial Site",
+	}
+	err := cacheOpenGraphData(db, initialData, true)
+	if err != nil {
+		t.Fatalf("Error caching initial data: %v", err)
+	}
+
+	// Update with new data
+	updatedData := &OpenGraphData{
+		URL:         testURL,
+		Title:       "Updated Title",
+		Description: "Updated Description",
+		Image:       "https://example.com/updated.jpg",
+		SiteName:    "Updated Site",
+	}
+	err = cacheOpenGraphData(db, updatedData, false) // Test with fetchSuccess=false
+	if err != nil {
+		t.Fatalf("Error updating cached data: %v", err)
+	}
+
+	// Verify there's still only one entry
+	var count int
+	err = db.QueryRow("SELECT COUNT(*) FROM opengraph_cache WHERE url = ?", testURL).Scan(&count)
+	if err != nil {
+		t.Fatalf("Error counting cached entries: %v", err)
+	}
+	if count != 1 {
+		t.Errorf("Expected 1 cached entry after update, got %d", count)
+	}
+
+	// Verify the data was updated
+	var title string
+	var fetchSuccess bool
+	err = db.QueryRow("SELECT title, fetch_success FROM opengraph_cache WHERE url = ?", 
+		testURL).Scan(&title, &fetchSuccess)
+	if err != nil {
+		t.Fatalf("Error retrieving updated data: %v", err)
+	}
+
+	if title != "Updated Title" {
+		t.Errorf("Expected updated title 'Updated Title', got '%s'", title)
+	}
+	if fetchSuccess {
+		t.Error("Expected fetch_success to be false after update")
+	}
+}
+
+func TestCleanupExpiredOpenGraphCache(t *testing.T) {
+	db := setupTestDB()
+	defer func() { _ = db.Close() }()
+
+	// Insert some test data - mix of expired and non-expired
+	testData := []struct {
+		url       string
+		expiresAt time.Time
+	}{
+		{"https://example.com/expired1", time.Now().Add(-24 * time.Hour)},
+		{"https://example.com/expired2", time.Now().Add(-1 * time.Hour)},
+		{"https://example.com/valid1", time.Now().Add(24 * time.Hour)},
+		{"https://example.com/valid2", time.Now().Add(1 * time.Hour)},
+	}
+
+	for _, data := range testData {
+		_, err := db.Exec(`
+			INSERT INTO opengraph_cache (url, title, expires_at, fetch_success)
+			VALUES (?, ?, ?, ?)`,
+			data.url, "Test Title", data.expiresAt, true)
+		if err != nil {
+			t.Fatalf("Failed to insert test data: %v", err)
+		}
+	}
+
+	// Verify we have 4 entries before cleanup
+	var count int
+	err := db.QueryRow("SELECT COUNT(*) FROM opengraph_cache").Scan(&count)
+	if err != nil {
+		t.Fatalf("Error counting entries before cleanup: %v", err)
+	}
+	if count != 4 {
+		t.Errorf("Expected 4 entries before cleanup, got %d", count)
+	}
+
+	// Run cleanup
+	err = cleanupExpiredOpenGraphCache(db)
+	if err != nil {
+		t.Fatalf("Error during cleanup: %v", err)
+	}
+
+	// Verify we have 2 entries after cleanup (the non-expired ones)
+	err = db.QueryRow("SELECT COUNT(*) FROM opengraph_cache").Scan(&count)
+	if err != nil {
+		t.Fatalf("Error counting entries after cleanup: %v", err)
+	}
+	if count != 2 {
+		t.Errorf("Expected 2 entries after cleanup, got %d", count)
+	}
+
+	// Verify the remaining entries are the non-expired ones
+	rows, err := db.Query("SELECT url FROM opengraph_cache ORDER BY url")
+	if err != nil {
+		t.Fatalf("Error querying remaining entries: %v", err)
+	}
+	defer func() { _ = rows.Close() }()
+
+	var remainingURLs []string
+	for rows.Next() {
+		var url string
+		err := rows.Scan(&url)
+		if err != nil {
+			t.Fatalf("Error scanning URL: %v", err)
+		}
+		remainingURLs = append(remainingURLs, url)
+	}
+
+	expectedURLs := []string{"https://example.com/valid1", "https://example.com/valid2"}
+	if len(remainingURLs) != len(expectedURLs) {
+		t.Errorf("Expected %d remaining URLs, got %d", len(expectedURLs), len(remainingURLs))
+	}
+	for i, expectedURL := range expectedURLs {
+		if i >= len(remainingURLs) || remainingURLs[i] != expectedURL {
+			t.Errorf("Expected URL '%s' at position %d, got '%s'", expectedURL, i, 
+				func() string { if i < len(remainingURLs) { return remainingURLs[i] }; return "none" }())
+		}
 	}
 }

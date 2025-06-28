@@ -138,3 +138,54 @@ func TestCalculatePostAge(t *testing.T) {
 		})
 	}
 }
+
+func TestFormatDomainName(t *testing.T) {
+	testCases := []struct {
+		name     string
+		input    string
+		expected string
+	}{
+		// Test mapped domains
+		{"the verge", "theverge", "The Verge"},
+		{"ars technica", "arstechnica", "Ars Technica"},
+		{"techcrunch", "techcrunch", "TechCrunch"},
+		{"stack overflow", "stackoverflow", "Stack Overflow"},
+		{"harvard business review", "hbr", "Harvard Business Review"},
+		{"wall street journal", "wsj", "Wall Street Journal"},
+		{"new york times", "nytimes", "New York Times"},
+		{"washington post", "washingtonpost", "Washington Post"},
+		{"bloomberg", "bloomberg", "Bloomberg"},
+		{"reuters", "reuters", "Reuters"},
+		{"bbc", "bbc", "BBC"},
+		{"cnn", "cnn", "CNN"},
+		{"npr", "npr", "NPR"},
+		{"wired", "wired", "Wired"},
+		{"engadget", "engadget", "Engadget"},
+		{"venturebeat", "venturebeat", "VentureBeat"},
+		{"fast company", "fastcompany", "Fast Company"},
+		{"hacker noon", "hackernoon", "Hacker Noon"},
+		{"dev.to", "dev", "Dev.to"},
+		{"substack", "substack", "Substack"},
+		
+		// Test case insensitive mapping
+		{"uppercase mapped", "THEVERGE", "The Verge"},
+		{"mixed case mapped", "TechCrunch", "TechCrunch"},
+		
+		// Test unknown domains (capitalize first letter)
+		{"unknown simple", "example", "Example"},
+		{"unknown complex", "somewebsite", "Somewebsite"},
+		{"single character", "a", "A"},
+		
+		// Test edge case - empty string
+		{"empty string", "", ""},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			result := formatDomainName(tc.input)
+			if result != tc.expected {
+				t.Errorf("Expected '%s', got '%s'", tc.expected, result)
+			}
+		})
+	}
+}

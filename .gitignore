@@ -3,4 +3,4 @@ hackernews.db
 hntop30.xml
 .task/
 coverage/
-
+coverage.out
