@@ -312,3 +312,36 @@ tasks:
     generates:
       - go.mod
       - go.sum
+
+  release-check:
+    desc: Check GoReleaser configuration
+    cmds:
+      - goreleaser check
+    sources:
+      - .goreleaser.yml
+
+  release-snapshot:
+    desc: Build a snapshot release locally (for testing)
+    deps:
+      - test
+      - lint
+      - validate-config
+    cmds:
+      - goreleaser release --snapshot --clean
+    sources:
+      - ./**/*.go
+      - .goreleaser.yml
+    generates:
+      - dist/**/*
+
+  release-dry-run:
+    desc: Test release process without publishing
+    deps:
+      - test
+      - lint
+      - validate-config
+    cmds:
+      - goreleaser release --skip=publish --clean
+    sources:
+      - ./**/*.go
+      - .goreleaser.yml

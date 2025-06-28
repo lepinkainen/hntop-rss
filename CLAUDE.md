@@ -32,6 +32,9 @@ This project uses [Task](https://taskfile.dev/) for build automation. All comman
 - `task test-ci` - Run tests for CI
 - `task upgrade-deps` - Upgrade all Go dependencies
 - `task validate-config` - Validate JSON configuration files
+- `task release-check` - Check GoReleaser configuration
+- `task release-snapshot` - Build snapshot release locally (for testing)
+- `task release-dry-run` - Test release process without publishing
 
 **Required**: Always run `task build` before finishing any task to ensure the project builds successfully.
 
@@ -136,3 +139,38 @@ The built binary accepts command-line flags:
 - `-config-url` - URL to remote JSON configuration file for domain mappings
 
 The generated RSS feed is saved as `hntop30.xml` in the specified directory.
+
+## Release Process
+
+This project uses [GoReleaser](https://goreleaser.com/) for automated releases with GitHub Actions.
+
+### Creating a Release
+
+1. **Create and push a git tag**:
+   ```bash
+   git tag v1.0.0
+   git push origin v1.0.0
+   ```
+
+2. **GitHub Actions automatically**:
+   - Runs tests and linting
+   - Builds for all platforms (Linux, macOS, Windows)
+   - Creates GitHub release with binaries and checksums
+   - Generates changelog from commits
+
+### Testing Releases Locally
+
+Before creating a tag, test the release process:
+
+```bash
+# Check GoReleaser configuration
+task release-check
+
+# Build snapshot release locally
+task release-snapshot
+
+# Test release process without publishing
+task release-dry-run
+```
+
+Built artifacts are placed in the `dist/` directory when using GoReleaser commands.

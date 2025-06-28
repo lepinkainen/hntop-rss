@@ -4,3 +4,5 @@ hntop30.xml
 .task/
 coverage/
 coverage.out
+dist/
+

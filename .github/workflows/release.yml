@@ -1,26 +1,22 @@
-name: Build and Release
+name: Release
 
 on:
   push:
-    branches: [ main ]
+    tags:
+      - 'v*'
   workflow_dispatch:
-    inputs:
-      major_version:
-        description: 'Major version number'
-        required: true
-        default: '1'
-        type: string
 
-env:
-  MAJOR_VERSION: ${{ github.event.inputs.major_version || '1' }}
+permissions:
+  contents: write
 
 jobs:
-  test-and-lint:
-    name: Test and Lint
+  goreleaser:
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout code
+      - name: Checkout
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - name: Set up Go
         uses: actions/setup-go@v5
@@ -32,133 +28,11 @@ jobs:
         with:
           version: 3.x
 
-      - name: Install golangci-lint
-        uses: golangci/golangci-lint-action@v6
+      - name: Run GoReleaser
+        uses: goreleaser/goreleaser-action@v6
         with:
-          version: latest
-
-      - name: Run tests
-        run: task test-ci
-
-      - name: Run linter
-        run: task lint
-
-      - name: Validate config
-        run: task validate-config
-
-  build:
-    name: Build ${{ matrix.goos }}/${{ matrix.goarch }}
-    needs: test-and-lint
-    runs-on: ubuntu-latest
-    strategy:
-      matrix:
-        include:
-          - goos: linux
-            goarch: amd64
-            task: build-linux-amd64-ci
-            artifact: hntop-rss-linux-amd64
-          - goos: darwin
-            goarch: amd64
-            task: build-darwin-amd64-ci
-            artifact: hntop-rss-darwin-amd64
-          - goos: darwin
-            goarch: arm64
-            task: build-darwin-arm64-ci
-            artifact: hntop-rss-darwin-arm64
-          - goos: windows
-            goarch: amd64
-            task: build-windows-ci
-            artifact: hntop-rss-windows-amd64.exe
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-
-      - name: Set up Go
-        uses: actions/setup-go@v5
-        with:
-          go-version: 'stable'
-
-      - name: Install Task
-        uses: arduino/setup-task@v2
-        with:
-          version: 3.x
-
-      - name: Set version
-        run: |
-          VERSION="${{ env.MAJOR_VERSION }}.${{ github.run_number }}-$(git rev-parse --short HEAD)"
-          echo "VERSION=${VERSION}" >> $GITHUB_ENV
-
-      - name: Build ${{ matrix.goos }}/${{ matrix.goarch }}
-        run: VERSION=${{ env.VERSION }} task ${{ matrix.task }}
-
-      - name: Upload build artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: ${{ matrix.artifact }}
-          path: build/${{ matrix.artifact }}
-          retention-days: 1
-
-  release:
-    name: Create Release
-    needs: build
-    runs-on: ubuntu-latest
-    permissions:
-      contents: write
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-
-      - name: Set version
-        id: version
-        run: |
-          VERSION="${{ env.MAJOR_VERSION }}.${{ github.run_number }}-$(git rev-parse --short HEAD)"
-          TAG="v${{ env.MAJOR_VERSION }}.${{ github.run_number }}"
-          echo "version=${VERSION}" >> $GITHUB_OUTPUT
-          echo "tag=${TAG}" >> $GITHUB_OUTPUT
-
-      - name: Download all artifacts
-        uses: actions/download-artifact@v4
-        with:
-          path: build/
-
-      - name: Organize artifacts
-        run: |
-          # Move artifacts from subdirectories to build/ root
-          for dir in build/*/; do
-            if [ -d "$dir" ]; then
-              artifact_name=$(basename "$dir")
-              if [ -f "$dir/$artifact_name" ]; then
-                mv "$dir/$artifact_name" "build/$artifact_name"
-              fi
-            fi
-          done
-          # Clean up empty directories
-          find build/ -type d -empty -delete
-          ls -la build/
-
-      - name: Create Release
-        uses: softprops/action-gh-release@v2
-        with:
-          tag_name: ${{ steps.version.outputs.tag }}
-          name: Release ${{ steps.version.outputs.tag }}
-          generate_release_notes: true
-          files: |
-            build/hntop-rss-linux-amd64
-            build/hntop-rss-darwin-amd64
-            build/hntop-rss-darwin-arm64
-            build/hntop-rss-windows-amd64.exe
-          body: |
-            ## hntop-rss ${{ steps.version.outputs.version }}
-            
-            Automated release built from commit ${{ github.sha }}
-            
-            ### Downloads
-            - **Linux (AMD64)**: `hntop-rss-linux-amd64`
-            - **macOS (Intel)**: `hntop-rss-darwin-amd64`
-            - **macOS (Apple Silicon)**: `hntop-rss-darwin-arm64`
-            - **Windows (AMD64)**: `hntop-rss-windows-amd64.exe`
-            
-            ### Usage
-            ```bash
-            ./hntop-rss-linux-amd64 -outdir /path/to/output -min-points 50
-            ```
+          distribution: goreleaser
+          version: '~> v2'
+          args: release --clean
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

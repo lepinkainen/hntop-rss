@@ -1,0 +1,104 @@
+version: 2
+
+before:
+  hooks:
+    # Clean up before build
+    - go mod tidy
+    - go generate ./...
+    # Run tests to ensure quality
+    - go test ./...
+    # Validate configuration files
+    - task validate-config
+
+builds:
+  - id: hntop-rss
+    binary: hntop-rss
+    main: .
+    env:
+      - CGO_ENABLED=0
+    goos:
+      - linux
+      - darwin
+      - windows
+    goarch:
+      - amd64
+      - arm64
+    # Exclude unsupported combinations
+    ignore:
+      - goos: windows
+        goarch: arm64
+    ldflags:
+      - -s -w
+      - -X main.Version={{.Version}}
+
+archives:
+  - name_template: "{{ .ProjectName }}-{{ .Version }}-{{ .Os }}-{{ .Arch }}"
+    files:
+      - README.md
+      - configs/domains.json
+      - llm-shared/LICENSE
+
+checksum:
+  name_template: "checksums.txt"
+
+changelog:
+  sort: asc
+  use: github
+  filters:
+    exclude:
+      - "^docs:"
+      - "^test:"
+      - "^chore:"
+      - "typo"
+  groups:
+    - title: Features
+      regexp: '^.*?feat(\([[:word:]]+\))??!?:.+$'
+      order: 0
+    - title: Bug Fixes
+      regexp: '^.*?fix(\([[:word:]]+\))??!?:.+$'
+      order: 1
+    - title: Performance Improvements
+      regexp: '^.*?perf(\([[:word:]]+\))??!?:.+$'
+      order: 2
+    - title: Others
+      order: 999
+
+release:
+  github:
+    owner: lepinkainen
+    name: hntop-rss
+  name_template: "Release {{.Tag}}"
+  header: |
+    ## hntop-rss {{.Tag}}
+    
+    Hacker News top stories RSS feed generator
+  footer: |
+    ### Usage
+    
+    Download the appropriate binary for your platform and run:
+    
+    ```bash
+    ./hntop-rss-linux-amd64 -outdir /path/to/output -min-points 50
+    ```
+    
+    For more options, see the README.md file.
+    
+    **Full Changelog**: https://github.com/lepinkainen/hntop-rss/compare/{{.PreviousTag}}...{{.Tag}}
+  extra_files:
+    - glob: configs/domains.json
+
+# Set up future Docker support (commented out for now)
+# dockers:
+#   - image_templates:
+#       - "ghcr.io/lepinkainen/hntop-rss:{{.Tag}}"
+#       - "ghcr.io/lepinkainen/hntop-rss:latest"
+#     dockerfile: Dockerfile
+#     build_flag_templates:
+#       - --label=org.opencontainers.image.title={{.ProjectName}}
+#       - --label=org.opencontainers.image.description="Hacker News RSS feed generator"
+#       - --label=org.opencontainers.image.url=https://github.com/lepinkainen/hntop-rss
+#       - --label=org.opencontainers.image.source=https://github.com/lepinkainen/hntop-rss
+#       - --label=org.opencontainers.image.version={{.Version}}
+#       - --label=org.opencontainers.image.created={{.Date}}
+#       - --label=org.opencontainers.image.revision={{.FullCommit}}
+#       - --platform=linux/amd64
