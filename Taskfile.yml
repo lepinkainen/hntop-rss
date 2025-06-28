@@ -95,11 +95,8 @@ tasks:
       - rm -rf {{.BUILDDIR}} {{.COVERAGE_DIR}}
 
   build-ci:
-    desc: Build the Go application for CI
+    desc: Build the Go application for CI (tests/lint/validation run separately)
     deps:
-      - test-ci
-      - lint
-      - validate-config
       - clean
     cmds:
       - mkdir -p {{.BUILDDIR}}
