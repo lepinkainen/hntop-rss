@@ -68,6 +68,7 @@ By default, the application fetches domain categorization mappings from a remote
 ```
 
 **Configuration format:**
+
 ```json
 {
   "category_domains": {
@@ -93,4 +94,4 @@ If configuration loading fails, domain mapping is disabled and the application c
 
 ### Output
 
-The generated RSS feed is saved as `hntop30.xml` in the specified output directory, containing categorized items with OpenGraph metadata and rich previews.
+The generated RSS feed is saved as `hackernews.xml` in the specified output directory, containing categorized items with OpenGraph metadata and rich previews.

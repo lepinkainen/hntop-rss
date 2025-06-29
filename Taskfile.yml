@@ -20,10 +20,10 @@ tasks:
   build:
     desc: Build the Go application
     deps:
+      - clean
       - test
       - lint
       - validate-config
-      - clean
     cmds:
       - mkdir -p {{.BUILDDIR}}
       - >
@@ -44,10 +44,10 @@ tasks:
   build-linux-amd64:
     desc: Cross-compile the Go application for Linux AMD64
     deps:
+      - clean
       - test
       - lint
       - validate-config
-      - clean
     cmds:
       - mkdir -p {{.BUILDDIR}}
       - >

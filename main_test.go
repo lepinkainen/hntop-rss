@@ -24,7 +24,7 @@ func TestUpdateAndSaveFeed_Integration(t *testing.T) {
 	// updateAndSaveFeed(tempDir, 50)
 
 	// Verify the RSS file was created
-	// rssFile := filepath.Join(tempDir, "hntop30.xml")
+	// rssFile := filepath.Join(tempDir, "hackernews.xml")
 	// if _, err := os.Stat(rssFile); os.IsNotExist(err) {
 	//     t.Errorf("RSS file was not created: %s", rssFile)
 	// }

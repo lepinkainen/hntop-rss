@@ -138,7 +138,7 @@ The built binary accepts command-line flags:
 - `-config` - Path to local JSON configuration file for domain mappings
 - `-config-url` - URL to remote JSON configuration file for domain mappings
 
-The generated RSS feed is saved as `hntop30.xml` in the specified directory.
+The generated RSS feed is saved as `hackernews.xml` in the specified directory.
 
 ## Release Process
 
@@ -147,6 +147,7 @@ This project uses [GoReleaser](https://goreleaser.com/) for automated releases w
 ### Creating a Release
 
 1. **Create and push a git tag**:
+
    ```bash
    git tag v1.0.0
    git push origin v1.0.0

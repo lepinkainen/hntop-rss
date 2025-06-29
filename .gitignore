@@ -1,6 +1,6 @@
 build/
 hackernews.db
-hntop30.xml
+hackernews.xml
 .task/
 coverage/
 coverage.out

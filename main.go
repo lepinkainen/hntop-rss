@@ -10,7 +10,7 @@ import (
 var Version string
 
 // updateAndSaveFeed orchestrates the entire process of fetching, updating, and generating the RSS feed
-func updateAndSaveFeed(outDir string, minPoints int, categoryMapper *CategoryMapper) {
+func updateAndSaveFeed(outDir string, minPoints int, limit int, categoryMapper *CategoryMapper) {
 	db := initDB()
 	defer func() { _ = db.Close() }()
 
@@ -26,13 +26,13 @@ func updateAndSaveFeed(outDir string, minPoints int, categoryMapper *CategoryMap
 	recentlyUpdated := updateStoredItems(db, newItems)
 
 	// Get all items from database
-	allItems := getAllItems(db, 30, minPoints)
+	allItems := getAllItems(db, limit, minPoints)
 
 	// Update item stats with current data from Algolia, skipping recently updated items
 	updateItemStats(db, allItems, recentlyUpdated)
 
 	// Re-fetch items to get updated stats for RSS generation
-	allItems = getAllItems(db, 30, minPoints)
+	allItems = getAllItems(db, limit, minPoints)
 
 	// Ensure output directory exists
 	err := os.MkdirAll(outDir, 0755)
@@ -42,7 +42,7 @@ func updateAndSaveFeed(outDir string, minPoints int, categoryMapper *CategoryMap
 	}
 
 	// Generate and save the feed
-	filename := filepath.Join(outDir, "hntop30.xml")
+	filename := filepath.Join(outDir, "hackernews.xml")
 	rss := generateRSSFeed(db, allItems, minPoints, categoryMapper)
 	err = os.WriteFile(filename, []byte(rss), 0644)
 	if err != nil {
@@ -58,6 +58,7 @@ func main() {
 	outDir := flag.String("outdir", ".", "directory where the RSS feed file will be saved")
 	debug := flag.Bool("debug", false, "enable debug logging")
 	minPoints := flag.Int("min-points", 50, "minimum points threshold for items to include in RSS feed")
+	limit := flag.Int("limit", 30, "maximum number of items to include in RSS feed")
 	configPath := flag.String("config", "", "path to local configuration file (optional)")
 	configURL := flag.String("config-url", "", "URL to remote configuration file (defaults to GitHub)")
 	flag.Parse()
@@ -75,6 +76,6 @@ func main() {
 	// Load configuration
 	categoryMapper := LoadConfig(*configPath, *configURL)
 
-	slog.Debug("Starting application", "outDir", *outDir, "debugMode", *debug, "minPoints", *minPoints)
-	updateAndSaveFeed(*outDir, *minPoints, categoryMapper)
+	slog.Debug("Starting application", "outDir", *outDir, "debugMode", *debug, "minPoints", *minPoints, "limit", *limit)
+	updateAndSaveFeed(*outDir, *minPoints, *limit, categoryMapper)
 }
