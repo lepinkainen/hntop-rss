@@ -4,6 +4,26 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 **IMPORTANT**: Before planning new tasks or making changes, always check `llm-shared/project_tech_stack.md` for project-specific guidelines, preferred libraries, and development standards.
 
+## Large Codebase Analysis
+
+For analyzing large codebases that might exceed context limits, use the gemini CLI tool:
+
+- Use `gemini -p` when analyzing entire codebases or large directories
+- Use for comparing multiple large files or understanding project-wide patterns
+- Examples:
+  - `gemini -p "@src/main.go Explain this file's purpose"`
+  - `gemini -p "@src/ Summarise the architecture of this codebase"`
+
+## Go Development Tools
+
+Use the `gofuncs` utility from `llm-shared/utils/` to list all functions in the Go project:
+
+```bash
+go run llm-shared/utils/gofuncs.go -dir .
+```
+
+This provides a compact, LLM-optimized format showing file locations, function types, visibility, and signatures.
+
 ## Project Overview
 
 This is a Go application that fetches Hacker News stories from the Algolia API and generates an RSS feed from high-scoring items. The application:
