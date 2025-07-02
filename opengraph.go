@@ -20,6 +20,7 @@ type OpenGraphFetcher struct {
 	domainMutex sync.Mutex
 	lastFetch   map[string]time.Time
 	semaphore   chan struct{}
+	urlMutexes  sync.Map // URL -> *sync.Mutex for preventing concurrent fetches of same URL
 }
 
 // NewOpenGraphFetcher creates a new OpenGraph fetcher with rate limiting
@@ -42,6 +43,14 @@ func NewOpenGraphFetcher() *OpenGraphFetcher {
 
 // FetchOpenGraph fetches OpenGraph data from a URL with rate limiting
 func (f *OpenGraphFetcher) FetchOpenGraph(ctx context.Context, targetURL string) (*OpenGraphData, error) {
+	// Get or create a mutex for this URL to prevent concurrent fetches
+	urlMutexInterface, _ := f.urlMutexes.LoadOrStore(targetURL, &sync.Mutex{})
+	urlMutex := urlMutexInterface.(*sync.Mutex)
+
+	// Lock for this specific URL
+	urlMutex.Lock()
+	defer urlMutex.Unlock()
+
 	// Acquire semaphore slot
 	select {
 	case f.semaphore <- struct{}{}:

@@ -97,6 +97,48 @@ func convertToCustomAtom(feed *feeds.Feed, itemCategories map[string][]string) *
 	return customFeed
 }
 
+// fetchOpenGraphConcurrently fetches OpenGraph data for multiple URLs using a worker pool
+func fetchOpenGraphConcurrently(db *sql.DB, fetcher *OpenGraphFetcher, urls []string, maxWorkers int) map[string]*OpenGraphData {
+	if len(urls) == 0 {
+		return make(map[string]*OpenGraphData)
+	}
+
+	// Create channels for work distribution and result collection
+	urlJobs := make(chan string, len(urls))
+	results := make(chan struct {
+		url  string
+		data *OpenGraphData
+	}, len(urls))
+
+	// Start worker goroutines
+	for i := 0; i < maxWorkers; i++ {
+		go func() {
+			for url := range urlJobs {
+				ogData := getOpenGraphWithFallback(db, fetcher, url)
+				results <- struct {
+					url  string
+					data *OpenGraphData
+				}{url: url, data: ogData}
+			}
+		}()
+	}
+
+	// Send all URLs to workers
+	for _, url := range urls {
+		urlJobs <- url
+	}
+	close(urlJobs)
+
+	// Collect results
+	resultMap := make(map[string]*OpenGraphData)
+	for i := 0; i < len(urls); i++ {
+		result := <-results
+		resultMap[result.url] = result.data
+	}
+
+	return resultMap
+}
+
 // getOpenGraphWithFallback fetches OpenGraph data with caching and fallback
 func getOpenGraphWithFallback(db *sql.DB, fetcher *OpenGraphFetcher, url string) *OpenGraphData {
 	// Skip OpenGraph fetching if database is nil (for testing)
@@ -182,6 +224,19 @@ func generateRSSFeed(db *sql.DB, items []HackerNewsItem, minPoints int, category
 	ogFetcher := NewOpenGraphFetcher()
 	slog.Debug("Initialized OpenGraph fetcher")
 
+	// Collect all URLs that need OpenGraph data
+	var urlsToFetch []string
+	for _, item := range items {
+		if item.Link != "" {
+			urlsToFetch = append(urlsToFetch, item.Link)
+		}
+	}
+
+	// Fetch OpenGraph data concurrently for all URLs
+	slog.Debug("Fetching OpenGraph data concurrently", "urlCount", len(urlsToFetch))
+	ogDataMap := fetchOpenGraphConcurrently(db, ogFetcher, urlsToFetch, 5) // Use 5 workers to match semaphore limit
+	slog.Debug("Completed concurrent OpenGraph fetching")
+
 	for _, item := range items {
 		// Extract domain from the article link
 		domain := ""
@@ -206,11 +261,10 @@ func generateRSSFeed(db *sql.DB, items []HackerNewsItem, minPoints int, category
 			engagementText = "💬 Good discussion"
 		}
 
-		// Fetch OpenGraph data for the article
+		// Get pre-fetched OpenGraph data for the article
 		var ogPreview string
 		if item.Link != "" {
-			slog.Debug("Fetching OpenGraph data for item", "hn_id", item.ItemID, "url", item.Link)
-			ogData := getOpenGraphWithFallback(db, ogFetcher, item.Link)
+			ogData := ogDataMap[item.Link]
 			if ogData != nil && (ogData.Title != "" || ogData.Description != "") {
 				ogPreview = fmt.Sprintf(`<div style="margin-bottom: 16px; padding: 12px; background: #f9f9f9; border-radius: 6px; border-left: 3px solid #007acc;">
 					<h4 style="margin: 0 0 8px 0; color: #007acc; font-size: 14px;">📄 Article Preview</h4>
