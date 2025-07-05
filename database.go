@@ -6,10 +6,14 @@ import (
 	"log/slog"
 	"os"
 	"path/filepath"
+	"sync"
 	"time"
 
 	_ "modernc.org/sqlite" // Pure Go SQLite driver
 )
+
+// dbMutex protects concurrent access to OpenGraph database operations
+var dbMutex sync.Mutex
 
 // initDB initializes and returns a SQLite database connection
 func initDB() *sql.DB {
@@ -184,6 +188,9 @@ func getOpenGraphData(db *sql.DB, url string) (*OpenGraphCache, error) {
 
 // cacheOpenGraphData stores OpenGraph data in the cache
 func cacheOpenGraphData(db *sql.DB, ogData *OpenGraphData, fetchSuccess bool) error {
+	dbMutex.Lock()
+	defer dbMutex.Unlock()
+
 	slog.Debug("Caching OpenGraph data", "url", ogData.URL, "success", fetchSuccess)
 
 	// Calculate expiry time: 7 days for successful fetches, 1 day for failures
